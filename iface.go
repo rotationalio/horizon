@@ -3,6 +3,7 @@ package horizon
 import (
 	"context"
 
+	"go.rtnl.ai/horizon/attachments"
 	"go.rtnl.ai/horizon/prompts"
 	"go.rtnl.ai/horizon/provider"
 )
@@ -28,16 +29,23 @@ type Runner interface {
 // If the runner implements this interface, it will be used to pre-process the input
 // before it is rendered into prompts. This is useful for adding additional context
 // or metadata to the input or managing any attachments with the input.
-type InputPreProcessor interface {
-	PreProcessInput(*Input) (*Input, error)
+type InputProcessor interface {
+	ProcessInput(*Input) (*Input, error)
 }
 
 // If the runner implements this interface, it will be used to pre-process the context
 // before it is rendered into prompts. Generally speaking this is done to convert the
 // context into a renderable format or to validate the context matches some schema, or
 // otherwise preparing the context for rendering.
-type ContextPreProcessor interface {
-	PreProcessContext(prompts.Context) (prompts.Context, error)
+type ContextProcessor interface {
+	ProcessContext(prompts.Context) (prompts.Context, error)
+}
+
+// If the runner implements this interface, it will be called for each attachment in
+// the input before the request to the LLM is created. Generally speaking this is done
+// to load attachments into memory from disk or S3 or to prepare URLs for the LLM.
+type AttachmentProcessor interface {
+	ProcessAttachment(*attachments.Attachment) (*attachments.Attachment, error)
 }
 
 // Runners can optionally implement the render interface to prepare the input being

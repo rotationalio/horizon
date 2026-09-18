@@ -224,6 +224,96 @@ func TestRouter(t *testing.T) {
 }
 
 //============================================================================
+// Benchmarks
+//============================================================================
+
+func BenchmarkRouterInsert(b *testing.B) {
+	benchTree := func(size int) func(b *testing.B) {
+		return func(b *testing.B) {
+			r := &horizon.Router{}
+			for path := range randomPaths(size) {
+				r.Insert(path.path, path.task)
+			}
+
+			b.ResetTimer()
+			for n := 0; n < b.N; n++ {
+				for path := range randomPaths(128) {
+					r.Insert(path.path, path.task)
+				}
+			}
+		}
+	}
+
+	benchMap := func(size int) func(b *testing.B) {
+		return func(b *testing.B) {
+			m := make(map[string]*horizon.Task)
+			for path := range randomPaths(size) {
+				m[path.path] = path.task
+			}
+
+			b.ResetTimer()
+			for n := 0; n < b.N; n++ {
+				for path := range randomPaths(128) {
+					m[path.path] = path.task
+				}
+			}
+		}
+	}
+
+	b.Run("SmallTree", benchTree(1024))
+	b.Run("SmallMap", benchMap(1024))
+	b.Run("MediumTree", benchTree(16384))
+	b.Run("MediumMap", benchMap(16384))
+	b.Run("LargeTree", benchTree(65536))
+	b.Run("LargeMap", benchMap(65536))
+}
+
+func BenchmarkRouterGet(b *testing.B) {
+	benchTree := func(size int) func(b *testing.B) {
+		return func(b *testing.B) {
+			r := &horizon.Router{}
+			paths := make([]*taskPath, 0, size)
+			for path := range randomPaths(size) {
+				paths = append(paths, path)
+				r.Insert(path.path, path.task)
+			}
+
+			b.ResetTimer()
+			for n := 0; n < b.N; n++ {
+				for _, path := range paths {
+					r.Get(path.path)
+				}
+			}
+		}
+	}
+
+	benchMap := func(size int) func(b *testing.B) {
+		return func(b *testing.B) {
+			m := make(map[string]*horizon.Task)
+			paths := make([]*taskPath, 0, size)
+			for path := range randomPaths(size) {
+				paths = append(paths, path)
+				m[path.path] = path.task
+			}
+
+			b.ResetTimer()
+			for n := 0; n < b.N; n++ {
+				for _, path := range paths {
+					m[path.path] = path.task
+				}
+			}
+		}
+	}
+
+	b.Run("SmallTree", benchTree(1024))
+	b.Run("SmallMap", benchMap(1024))
+	b.Run("MediumTree", benchTree(16384))
+	b.Run("MediumMap", benchMap(16384))
+	b.Run("LargeTree", benchTree(65536))
+	b.Run("LargeMap", benchMap(65536))
+}
+
+//============================================================================
 // Create Random, Realistic Horizon Task Paths
 //============================================================================
 

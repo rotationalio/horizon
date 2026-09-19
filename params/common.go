@@ -36,7 +36,7 @@ const (
 	ReasoningSummary     = "reasoning_summary"
 )
 
-// Omitted parameters that are used directly by Endeavor or are purposefully not supported.
+// Omitted parameters that are used directly by Horizon or are purposefully not supported.
 const (
 	Messages           = "messages"
 	Model              = "model"

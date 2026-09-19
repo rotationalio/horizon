@@ -1,0 +1,60 @@
+name: Bug Report
+description: File a bug report.
+title: "[Bug]: "
+labels: ["bug"]
+
+body:
+  - type: markdown
+    attributes:
+      value: |
+        Thanks for taking the time to make Horizon better with this bug report!
+  - type: input
+    id: version
+    attributes:
+      label: Version
+      description: What version of Horizon are you running?
+      placeholder: 0.5.0
+    validations:
+      required: false
+  - type: dropdown
+    id: browsers
+    attributes:
+      label: What browsers are you seeing the problem on?
+      multiple: true
+      options:
+        - Firefox
+        - Chrome
+        - Safari
+        - Microsoft Edge
+        - Other (please specify in description)
+  - type: textarea
+    id: what-happened
+    attributes:
+      label: What happened?
+      description: Tell us what is broken so we can fix it! Screenshots are extra helpful (https://www.awesomescreenshot.com/)
+      placeholder: Tell us what you see!
+      value: "A bug happened!"
+    validations:
+      required: true
+  - type: textarea
+    id: logs
+    attributes:
+      label: Log output (optional)
+      description: You can paste any relevant log outputs here (no need for backticks, this will automatically format for you)
+      render: shell
+    validations:
+      required: false
+  - type: checkboxes
+    id: confirmation
+    attributes:
+      label: Confirmation
+      description: Please confirm that you have reviewed this bug report before submitting.
+      options:
+        - label: I have searched existing issues to make sure this bug report hasn't been submitted already
+          required: true
+        - label: I have confirmed this bug has not already been fixed in the latest release of Horizon
+          required: true
+        - label: I have provided enough detail for maintainers to reproduce the bug
+          required: true
+        - label: I have provided relevant logs and screenshots (if applicable)
+          required: false

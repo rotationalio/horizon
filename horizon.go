@@ -22,12 +22,12 @@ func Run(ctx context.Context, input *Input, task *Task, runner Runner) (output *
 
 // A horizon process executes a horizon task using a runner.
 type process struct {
-	runner   Runner
-	task     *Task
-	input    *Input
-	request  *provider.Request
-	output   *Output
-	response *provider.Response
+	runner  Runner
+	task    *Task
+	input   *Input
+	request *provider.Request
+	output  *Output
+	// response *provider.Response
 }
 
 func (p *process) Run(ctx context.Context) (output *Output, err error) {

@@ -1,0 +1,59 @@
+name: Feature Request
+description: Suggest an idea or improvement for Horizon
+title: "[Feature Request]: "
+labels: ["feature-request"]
+
+body:
+  - type: markdown
+    attributes:
+      value: Thanks for taking the time to fill out this feature request for Horizon!
+  - type: input
+    id: version
+    attributes:
+      label: Version
+      description: What version of Horizon are you running?
+      placeholder: 0.5.0
+    validations:
+      required: false
+  - type: textarea
+    id: problem-statement
+    attributes:
+      label: Problem Statement
+      description: Tell us what you would like to see changed or improved.
+      placeholder: "The dashboard is always light mode, which causes eye strain for users working at night."
+    validations:
+      required: true
+  - type: textarea
+    id: proposed-solution
+    attributes:
+      label: Proposed Solution
+      description: Explain how you would like to see the problem solved.
+      placeholder: "I would like to see a dark mode option in the settings."
+    validations:
+      required: true
+  - type: textarea
+    id: additional-context
+    attributes:
+      label: Additional Context
+      description: Provide any additional context that you think would be helpful.
+      placeholder: "I’ve tried using browser extensions for dark mode, but they break some UI elements."
+    validations:
+      required: false
+  - type: textarea
+    id: screenshots-mockups
+    attributes:
+      label: Screenshots / Mockups
+      description: If applicable, add screenshots or mockups. It is recommended to use awesomescreenshot.com to create your screenshots.
+      placeholder: https://www.awesomescreenshot.com/<image-url>
+    validations:
+      required: false
+  - type: checkboxes
+    id: confirmation
+    attributes:
+      label: Confirmation
+      description: Please confirm you have reviewed your request before submitting your request.
+      options:
+        - label: I have searched existing issues to make sure this request hasn’t been submitted already
+          required: true
+        - label: I have confirmed this feature does not already exist in the latest release of Horizon
+          required: false

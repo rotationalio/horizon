@@ -4,12 +4,11 @@ import (
 	"context"
 	"time"
 
-	"go.opentelemetry.io/otel"
 	"go.rtnl.ai/horizon/attachments"
 	"go.rtnl.ai/horizon/provider"
 )
 
-var tracer = otel.Tracer("go.rtnl.ai/horizon")
+// var tracer = otel.Tracer("go.rtnl.ai/horizon")
 
 // Executes the horizon task using the provided runner and input context.
 func Run(ctx context.Context, input *Input, task *Task, runner Runner) (output *Output, err error) {

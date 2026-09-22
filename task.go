@@ -3,10 +3,12 @@ package horizon
 import (
 	"context"
 
+	"go.rtnl.ai/horizon/capabilities"
 	"go.rtnl.ai/horizon/modality"
 	"go.rtnl.ai/horizon/params"
 	"go.rtnl.ai/horizon/prompts"
-	"go.rtnl.ai/horizon/provider"
+	"go.rtnl.ai/horizon/provider/api"
+
 	"go.rtnl.ai/horizon/schema"
 	"go.rtnl.ai/ulid"
 	"go.rtnl.ai/x/mime"
@@ -82,12 +84,21 @@ func (t *Task) Run(ctx context.Context, input *Input, runner Runner) (output *Ou
 //============================================================================
 
 // Creates a basic provider request from the task definition.
-func (t *Task) request() *provider.Request {
-	// TODO: Handle the tools definition.
-	return &provider.Request{
-		Model:        t.Model.Slug,
-		Params:       t.Model.Parameters,
-		OutputSchema: t.Output.Schema,
-		Tools:        t.Capabilities.Tools,
+func (t *Task) request() *api.Request {
+	request := &api.Request{
+		Model:  t.Model.Slug,
+		Params: t.Model.Parameters,
 	}
+	if t.Output != nil {
+		request.OutputSchema = t.Output.Schema
+	}
+	// TODO(capabilities): Resolve configured tool names to definitions when
+	// capability execution is implemented in a future ticket.
+	if t.Capabilities != nil {
+		request.Tools = make([]capabilities.ToolDefinition, len(t.Capabilities.Tools))
+		for i, name := range t.Capabilities.Tools {
+			request.Tools[i].Name = name
+		}
+	}
+	return request
 }

@@ -2,10 +2,14 @@ package horizon
 
 import (
 	"context"
+	"encoding/base64"
 	"time"
 
 	"go.rtnl.ai/horizon/attachments"
-	"go.rtnl.ai/horizon/provider"
+	"go.rtnl.ai/horizon/media"
+	"go.rtnl.ai/horizon/prompts"
+
+	"go.rtnl.ai/horizon/provider/api"
 )
 
 // var tracer = otel.Tracer("go.rtnl.ai/horizon")
@@ -25,9 +29,9 @@ type process struct {
 	runner  Runner
 	task    *Task
 	input   *Input
-	request *provider.Request
+	request *api.Request
 	output  *Output
-	// response *provider.Response
+	// response *api.Response
 }
 
 func (p *process) Run(ctx context.Context) (output *Output, err error) {
@@ -126,18 +130,23 @@ func (p *process) ProcessAttachments(ctx context.Context) error {
 	return cancel(ctx, func(ctx context.Context) (err error) {
 		if p.runner != nil {
 			if preprocessor, ok := p.runner.(AttachmentProcessor); ok {
-				p.request.Attachments = make(attachments.Attachments, len(p.input.Attachments))
+				p.request.Attachments = make([]*api.Attachment, len(p.input.Attachments))
 				for i, attachment := range p.input.Attachments {
-					if p.request.Attachments[i], err = preprocessor.ProcessAttachment(attachment); err != nil {
+					var processed *attachments.Attachment
+					if processed, err = preprocessor.ProcessAttachment(attachment); err != nil {
 						return err
 					}
+					p.request.Attachments[i] = providerAttachment(processed)
 				}
 				return nil
 			}
 		}
 
 		// Otherwise just use the attachments as defined in the input.
-		p.request.Attachments = p.input.Attachments
+		p.request.Attachments = make([]*api.Attachment, len(p.input.Attachments))
+		for i, attachment := range p.input.Attachments {
+			p.request.Attachments[i] = providerAttachment(attachment)
+		}
 		return nil
 	})
 }
@@ -146,17 +155,21 @@ func (p *process) Render(ctx context.Context) error {
 	return cancel(ctx, func(ctx context.Context) (err error) {
 		if p.runner != nil {
 			if renderer, ok := p.runner.(Renderer); ok {
-				if p.request.Input, err = renderer.Render(p.task.Prompts, p.input.Context); err != nil {
+				var rendered prompts.Prompts
+				if rendered, err = renderer.Render(p.task.Prompts, p.input.Context); err != nil {
 					return err
 				}
+				p.request.Input = rendered
 				return nil
 			}
 		}
 
 		// Use the default renderer to render the prompts.
-		if p.request.Input, err = Render(p.task.Prompts, p.input.Context); err != nil {
+		var rendered prompts.Prompts
+		if rendered, err = Render(p.task.Prompts, p.input.Context); err != nil {
 			return err
 		}
+		p.request.Input = rendered
 		return nil
 	})
 }
@@ -192,4 +205,17 @@ func cancel(ctx context.Context, f func(context.Context) error) (err error) {
 		return err
 	}
 	return nil
+}
+
+// Converts an attachments.Attachment to an api.Attachment.
+// TODO: review this and possibly unify the attachments, otherwise remove this TODO
+func providerAttachment(attachment *attachments.Attachment) *api.Attachment {
+	if attachment == nil {
+		return nil
+	}
+	return &api.Attachment{
+		MimeType: media.Type(attachment.ContentType),
+		Filename: attachment.Filename,
+		URL:      "data:" + attachment.ContentType + ";base64," + base64.StdEncoding.EncodeToString(attachment.Data),
+	}
 }

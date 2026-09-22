@@ -1,6 +1,9 @@
 package prompts
 
-import "go.rtnl.ai/horizon/render"
+import (
+	"go.rtnl.ai/horizon/capabilities"
+	"go.rtnl.ai/horizon/render"
+)
 
 // A collection of [Template]s.
 type Templates []*Template
@@ -19,14 +22,14 @@ type Prompts []*Prompt
 // A prompt is generally rendered from a [Template] and is a single message sent to the
 // LLM as part of a request to cause it to perform a generation.
 type Prompt struct {
-	Index   uint   `json:"index"`   // The index of the prompt in the list of prompts
-	Role    Role   `json:"role"`    // The role of the message sender.
-	Content string `json:"content"` // The rendered content of the message.
-	Status  string `json:"status"`  // Any of "in_progress", "completed", "incomplete".
-	Phase   string `json:"phase"`   // Any of "commentary", "final_answer".
-	Type    string `json:"type"`    // Should be "message".
-	// ToolCalls   []capabilities.ToolCall   `json:"tool_calls,omitzero"`   // Assistant tool calls associated with the message.
-	// ToolResults []capabilities.ToolResult `json:"tool_results,omitzero"` // Results associated with prior tool calls.
+	Index       uint                      `json:"index"`                 // The index of the prompt in the list of prompts
+	Role        Role                      `json:"role"`                  // The role of the message sender.
+	Content     string                    `json:"content"`               // The rendered content of the message.
+	Status      string                    `json:"status"`                // Any of "in_progress", "completed", "incomplete".
+	Phase       string                    `json:"phase"`                 // Any of "commentary", "final_answer".
+	Type        string                    `json:"type"`                  // Should be "message".
+	ToolCalls   []capabilities.ToolCall   `json:"tool_calls,omitzero"`   // Assistant tool calls associated with the message.
+	ToolResults []capabilities.ToolResult `json:"tool_results,omitzero"` // Results associated with prior tool calls.
 }
 
 // Returns true if the templates are sorted by index, otherwise returns false.

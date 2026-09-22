@@ -5,7 +5,7 @@ import (
 
 	"go.rtnl.ai/horizon/attachments"
 	"go.rtnl.ai/horizon/prompts"
-	"go.rtnl.ai/horizon/provider"
+	"go.rtnl.ai/horizon/provider/api"
 )
 
 // A horizon runner defines the methods required to execute a task. Horizon execution
@@ -60,7 +60,7 @@ type Renderer interface {
 // the LLM. The InputGuard interface is used to validate every request, even tool calls
 // before being sent to the LLM.
 type InputGuard interface {
-	ProtectInput(*provider.Request) error
+	ProtectInput(*api.Request) error
 }
 
 // OutputGuards are used to validate LLM output responses to ensure that they are not
@@ -68,5 +68,5 @@ type InputGuard interface {
 // The OutputGuard is applied to every LLM response, even ones that are requesting tool
 // calls or other intermediate responses.
 type OutputGuard interface {
-	ProtectOutput(*provider.Response) error
+	ProtectOutput(*api.Response) error
 }

@@ -18,6 +18,7 @@ import (
 	"go.rtnl.ai/horizon/provider/config"
 	"go.rtnl.ai/horizon/provider/openai"
 	"go.rtnl.ai/horizon/provider/types"
+	"go.rtnl.ai/horizon/schema"
 	"go.rtnl.ai/ulid"
 	"go.rtnl.ai/x/mime"
 	"go.rtnl.ai/x/semver"
@@ -89,7 +90,7 @@ func TestChatIntegration(t *testing.T) {
 				{Role: api.RoleSystem, Content: "This is a test of the chat completions API. Respond as quickly and as briefly as possible."},
 				{Role: api.RoleUser, Content: "Respond with a JSON object containing at least 2 colors and no more than 8 colors using the defined json schema."},
 			},
-			OutputSchema: &api.Schema{
+			OutputSchema: &schema.Schema{
 				Name:     "colors",
 				MimeType: mime.ApplicationSchemaJSON,
 				Version: semver.Version{
@@ -155,7 +156,7 @@ func TestChatIntegration(t *testing.T) {
 				{Role: api.RoleDeveloper, Content: "This is a test of the chat completions API. Respond as quickly and as briefly as possible."},
 				{Role: api.RoleUser, Content: "What is the topic of the attached text file? Respond with a JSON object containing the topic."},
 			},
-			OutputSchema: &api.Schema{
+			OutputSchema: &schema.Schema{
 				Name:     "topic",
 				MimeType: mime.ApplicationSchemaJSON,
 				Version: semver.Version{
@@ -214,7 +215,7 @@ func TestChatIntegration(t *testing.T) {
 				{Role: api.RoleDeveloper, Content: "This is a test of the chat completions API. Respond as quickly and as briefly as possible."},
 				{Role: api.RoleUser, Content: "Which state flag is pictured in the image? Respond with a JSON object containing the name of the state."},
 			},
-			OutputSchema: &api.Schema{
+			OutputSchema: &schema.Schema{
 				Name:     "flag",
 				MimeType: mime.ApplicationSchemaJSON,
 				Version: semver.Version{
@@ -273,7 +274,7 @@ func TestChatIntegration(t *testing.T) {
 				{Role: api.RoleDeveloper, Content: "This is a test of the chat completions API. Respond as quickly and as briefly as possible."},
 				{Role: api.RoleUser, Content: "Transcribe the first 10 seconds of the audio file. Respond with a JSON object containing the transcription."},
 			},
-			OutputSchema: &api.Schema{
+			OutputSchema: &schema.Schema{
 				Name:     "transcription",
 				MimeType: mime.ApplicationSchemaJSON,
 				Version: semver.Version{
@@ -329,7 +330,7 @@ func TestChatIntegration(t *testing.T) {
 				{Role: api.RoleDeveloper, Content: "This is a test of the chat completions API. Respond as quickly and as briefly as possible."},
 				{Role: api.RoleUser, Content: "What topic is described by the attached file? Respond with a JSON object containing the topic."},
 			},
-			OutputSchema: &api.Schema{
+			OutputSchema: &schema.Schema{
 				Name:     "topic",
 				MimeType: mime.ApplicationSchemaJSON,
 				Version: semver.Version{

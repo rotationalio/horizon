@@ -10,6 +10,7 @@ import (
 	"go.rtnl.ai/horizon/media"
 	"go.rtnl.ai/horizon/params"
 	"go.rtnl.ai/horizon/prompts"
+	"go.rtnl.ai/horizon/schema"
 )
 
 // Request is meant to generalize all task parameters that are being sent in a single
@@ -24,7 +25,7 @@ type Request struct {
 	Params       *params.Params                // Parameters to modify model behavior and set on outgoing API requests
 	Input        prompts.Prompts               // The input text messages to send to the LLM
 	Attachments  []*Attachment                 // Any files, images, links, etc. that are attached to the request
-	OutputSchema *Schema                       // The schema of the output to return from the LLM
+	OutputSchema *schema.Schema                // The schema of the output to return from the LLM
 	Tools        []capabilities.ToolDefinition // Capability tools advertised to the model.
 }
 

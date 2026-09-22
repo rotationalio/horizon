@@ -22,6 +22,7 @@ import (
 	"go.rtnl.ai/horizon/provider/config"
 	"go.rtnl.ai/horizon/provider/openai"
 	"go.rtnl.ai/horizon/provider/types"
+	"go.rtnl.ai/horizon/schema"
 	"go.rtnl.ai/x/mime"
 	"go.rtnl.ai/x/semver"
 )
@@ -79,7 +80,7 @@ func TestResponsesBody(t *testing.T) {
 			Input: []api.Message{
 				{Role: api.RoleUser, Content: "Return colors."},
 			},
-			OutputSchema: &api.Schema{
+			OutputSchema: &schema.Schema{
 				Name:        "colors",
 				Description: "A list of colors",
 				Strict:      true,
@@ -176,13 +177,13 @@ func TestResponsesResponseFormat(t *testing.T) {
 	})
 
 	t.Run("JSONObject", func(t *testing.T) {
-		format, err := openai.ResponsesResponseFormat(&api.Schema{MimeType: mime.ApplicationJSON})
+		format, err := openai.ResponsesResponseFormat(&schema.Schema{MimeType: mime.ApplicationJSON})
 		require.NoError(t, err)
 		require.NotNil(t, format.OfJSONObject)
 	})
 
 	t.Run("Unsupported", func(t *testing.T) {
-		_, err := openai.ResponsesResponseFormat(&api.Schema{MimeType: mime.TextHTML})
+		_, err := openai.ResponsesResponseFormat(&schema.Schema{MimeType: mime.TextHTML})
 		require.Error(t, err)
 	})
 }
@@ -259,7 +260,7 @@ func TestResponsesIntegration(t *testing.T) {
 				{Role: api.RoleSystem, Content: "This is a test of the responses API. Respond as quickly and as briefly as possible."},
 				{Role: api.RoleUser, Content: "Respond with a JSON object containing at least 2 colors and no more than 8 colors using the defined json schema."},
 			},
-			OutputSchema: &api.Schema{
+			OutputSchema: &schema.Schema{
 				Name:     "colors",
 				MimeType: mime.ApplicationSchemaJSON,
 				Version: semver.Version{
@@ -324,7 +325,7 @@ func TestResponsesIntegration(t *testing.T) {
 				{Role: api.RoleDeveloper, Content: "This is a test of the responses API. Respond as quickly and as briefly as possible."},
 				{Role: api.RoleUser, Content: "What is the topic of the attached text file? Respond with a JSON object containing the topic."},
 			},
-			OutputSchema: &api.Schema{
+			OutputSchema: &schema.Schema{
 				Name:     "topic",
 				MimeType: mime.ApplicationSchemaJSON,
 				Version: semver.Version{
@@ -382,7 +383,7 @@ func TestResponsesIntegration(t *testing.T) {
 				{Role: api.RoleDeveloper, Content: "This is a test of the responses API. Respond as quickly and as briefly as possible."},
 				{Role: api.RoleUser, Content: "Which state flag is pictured in the image? Respond with a JSON object containing the name of the state."},
 			},
-			OutputSchema: &api.Schema{
+			OutputSchema: &schema.Schema{
 				Name:     "flag",
 				MimeType: mime.ApplicationSchemaJSON,
 				Version: semver.Version{
@@ -440,7 +441,7 @@ func TestResponsesIntegration(t *testing.T) {
 				{Role: api.RoleDeveloper, Content: "This is a test of the responses API. Respond as quickly and as briefly as possible."},
 				{Role: api.RoleUser, Content: "Transcribe the first 10 seconds of the audio file. Respond with a JSON object containing the transcription."},
 			},
-			OutputSchema: &api.Schema{
+			OutputSchema: &schema.Schema{
 				Name:     "transcription",
 				MimeType: mime.ApplicationSchemaJSON,
 				Version: semver.Version{
@@ -498,7 +499,7 @@ func TestResponsesIntegration(t *testing.T) {
 				{Role: api.RoleDeveloper, Content: "This is a test of the responses API. Respond as quickly and as briefly as possible."},
 				{Role: api.RoleUser, Content: "What topic is described by the attached file? Respond with a JSON object containing the topic."},
 			},
-			OutputSchema: &api.Schema{
+			OutputSchema: &schema.Schema{
 				Name:     "topic",
 				MimeType: mime.ApplicationSchemaJSON,
 				Version: semver.Version{

@@ -18,6 +18,7 @@ import (
 	"go.rtnl.ai/horizon/prompts"
 	api "go.rtnl.ai/horizon/provider/api"
 	"go.rtnl.ai/horizon/provider/config"
+	"go.rtnl.ai/horizon/schema"
 )
 
 var (
@@ -401,7 +402,7 @@ func ResponsesTools(definitions []capabilities.ToolDefinition) ([]responses.Tool
 // response format can be a nil schema, text/plain, application/json, or
 // application/schema+json. A schema is only added to the request if the mime
 // type is application/schema+json.
-func ResponsesResponseFormat(schema *api.Schema) (format responses.ResponseFormatTextConfigUnionParam, err error) {
+func ResponsesResponseFormat(schema *schema.Schema) (format responses.ResponseFormatTextConfigUnionParam, err error) {
 	// If the schema is nil, or plain text is requested, return text output format by default.
 	if schema == nil {
 		return responses.ResponseFormatTextConfigUnionParam{
@@ -516,7 +517,7 @@ func ResponsesAttachments(attachments []*api.Attachment) (parts responses.Respon
 }
 
 // Converts a Horizon schema into a JSON Schema object map for the Responses API.
-func jsonSchemaObject(schema *api.Schema) (_ map[string]any, err error) {
+func jsonSchemaObject(schema *schema.Schema) (_ map[string]any, err error) {
 	var raw any
 	if raw, err = schema.JSON(); err != nil {
 		return nil, err

@@ -16,6 +16,7 @@ import (
 	"go.rtnl.ai/horizon/prompts"
 	api "go.rtnl.ai/horizon/provider/api"
 	"go.rtnl.ai/horizon/provider/config"
+	"go.rtnl.ai/horizon/schema"
 )
 
 var (
@@ -381,7 +382,7 @@ func chatToolCalls(calls []capabilities.ToolCall) []openai.ChatCompletionMessage
 // response format can be a nil schema, text/plain, application/json, or
 // application/schema+json. A schema is only added to the request if the mime
 // type is application/schema+json.
-func ChatCompletionsResponseFormat(schema *api.Schema) (format openai.ChatCompletionNewParamsResponseFormatUnion, err error) {
+func ChatCompletionsResponseFormat(schema *schema.Schema) (format openai.ChatCompletionNewParamsResponseFormatUnion, err error) {
 	// If the schema is nil, or plain text is requested, return text output format by default.
 	if schema == nil {
 		return openai.ChatCompletionNewParamsResponseFormatUnion{

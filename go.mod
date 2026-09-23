@@ -8,8 +8,10 @@ require (
 	github.com/stretchr/testify v1.12.1
 	go.rtnl.ai/confire v1.2.0
 	go.rtnl.ai/enumify v1.1.1
+	go.rtnl.ai/tidal v1.9.0
 	go.rtnl.ai/ulid v1.3.0
 	go.rtnl.ai/x v1.21.0
+	golang.org/x/oauth2 v0.37.0
 )
 
 require (

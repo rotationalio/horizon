@@ -127,7 +127,7 @@ func TestRouter(t *testing.T) {
 		require.True(t, ok)
 		require.Equal(t, taskc, cmpt)
 
-		require.Equal(t, 3, r.Size())
+		require.Equal(t, 4, r.Size())
 	})
 
 	t.Run("Complex", func(t *testing.T) {
@@ -199,6 +199,7 @@ func TestRouter(t *testing.T) {
 				r := &horizon.Router{}
 				task := &horizon.Task{Name: randomTask()}
 				require.False(t, r.Insert(base, task))
+				require.Equal(t, 1, r.Size())
 
 				cmpt, ok := r.Get(base)
 				require.True(t, ok)
@@ -209,6 +210,7 @@ func TestRouter(t *testing.T) {
 				require.Equal(t, task, cmpt)
 
 				require.True(t, r.Remove(base))
+				require.Equal(t, 0, r.Size())
 				_, ok = r.Get(base)
 				require.False(t, ok)
 

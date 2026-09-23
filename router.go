@@ -49,6 +49,7 @@ func (r *Router) Insert(path string, task *Task) bool {
 				path: path,
 				task: task,
 			}
+			r.size++
 			return false
 		}
 

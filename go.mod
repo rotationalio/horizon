@@ -4,6 +4,7 @@ go 1.26.5
 
 require (
 	github.com/cespare/xxhash/v2 v2.3.0
+	github.com/joho/godotenv v1.5.1
 	github.com/stretchr/testify v1.12.1
 	go.rtnl.ai/confire v1.2.0
 	go.rtnl.ai/enumify v1.1.1

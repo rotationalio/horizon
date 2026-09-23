@@ -10,16 +10,22 @@ import (
 	"go.rtnl.ai/horizon/schema"
 )
 
-// Provider is the interface for an LLM or VLM provider.
-type Provider interface {
+type Inference interface {
 	// Performs an inference [Request] and returns the [Response].
 	Generate(ctx context.Context, req *Request) (*Response, error)
+}
 
+type Catalog interface {
 	// Returns a list of all [catalog.Model] from the provider's catalog.
 	FetchCatalog(ctx context.Context) ([]catalog.Model, error)
 
 	// Returns a single [catalog.Model] by the provider's model ID.
 	RetrieveModel(ctx context.Context, modelID string) (*catalog.Model, error)
+}
+
+type Provider interface {
+	Inference
+	Catalog
 }
 
 func New(config Config) Provider {

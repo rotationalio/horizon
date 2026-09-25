@@ -1,4 +1,4 @@
-package types
+package provider
 
 //go:generate enumify -names apiTypeNames
 

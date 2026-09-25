@@ -1,4 +1,4 @@
-package types
+package provider
 
 import (
 	"go.rtnl.ai/horizon/provider/auth"

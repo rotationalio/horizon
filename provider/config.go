@@ -6,7 +6,6 @@ import (
 
 	"go.rtnl.ai/horizon/errors"
 	"go.rtnl.ai/horizon/provider/auth"
-	"go.rtnl.ai/horizon/provider/types"
 )
 
 const DefaultRequestTimeout = 128 * time.Second
@@ -14,11 +13,11 @@ const DefaultRequestTimeout = 128 * time.Second
 // The configuration for building a Horizon [Provider].
 type Config struct {
 	// The API type that this provider uses (ex: "chat_completions", "requests")
-	APIType types.APIType `json:"api_type" yaml:"api_type" msg:"api_type"`
+	APIType APIType `json:"api_type" yaml:"api_type" msg:"api_type"`
 	// The base endpoint URL for the provider's inference API.
 	InferenceEndpoint string `json:"inference_endpoint" yaml:"inference_endpoint" msg:"inference_endpoint"`
 	// The provider's type (ex: "openai", "openrouter", etc.)
-	ProviderType types.ProviderType `json:"provider_type" yaml:"provider_type" msg:"provider_type"`
+	ProviderType ProviderType `json:"provider_type" yaml:"provider_type" msg:"provider_type"`
 	// The base endpoint URL for the provider's model catalog API.
 	CatalogEndpoint string `json:"catalog_endpoint" yaml:"catalog_endpoint" msg:"catalog_endpoint"`
 	// The default model to use for the provider. This is used for system tasks such
@@ -33,7 +32,7 @@ type Config struct {
 
 func (p *Config) Validate() (err error) {
 	// Require API type and inference endpoint. Also cache it now to save a parsing.
-	if p.APIType == types.APITypeUnknown {
+	if p.APIType == APITypeUnknown {
 		return errors.ErrUnsupportedAPIType
 	}
 	if p.inference, err = url.Parse(p.InferenceEndpoint); err != nil {
@@ -41,7 +40,7 @@ func (p *Config) Validate() (err error) {
 	}
 
 	// Require provider type and catalog endpoint. Also cache it now to save a parsing.
-	if p.ProviderType == types.ProviderTypeUnknown {
+	if p.ProviderType == ProviderTypeUnknown {
 		return errors.ErrUnsupportedProviderType
 	}
 	if p.catalog, err = url.Parse(p.CatalogEndpoint); err != nil {
@@ -51,7 +50,7 @@ func (p *Config) Validate() (err error) {
 	// Require a default model if the provider type is openai_compatible. Other
 	// provider types have preferred default models in their packages, so this
 	// is optional for them.
-	if p.ProviderType == types.ProviderTypeOpenAICompatible && p.DefaultModel == "" {
+	if p.ProviderType == ProviderTypeOpenAICompatible && p.DefaultModel == "" {
 		return errors.ErrInvalidDefaultModel
 	}
 
@@ -100,9 +99,9 @@ func (p *Config) Equals(other *Config) bool {
 
 // Returns true if the provider configuration is empty.
 func (p *Config) IsZero() bool {
-	return p.APIType == types.APITypeUnknown &&
+	return p.APIType == APITypeUnknown &&
 		p.InferenceEndpoint == "" &&
-		p.ProviderType == types.ProviderTypeUnknown &&
+		p.ProviderType == ProviderTypeUnknown &&
 		p.CatalogEndpoint == "" &&
 		p.DefaultModel == "" &&
 		p.Credentials == nil

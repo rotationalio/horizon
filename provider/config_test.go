@@ -7,7 +7,6 @@ import (
 	"go.rtnl.ai/horizon/errors"
 	"go.rtnl.ai/horizon/provider"
 	"go.rtnl.ai/horizon/provider/auth/credtest"
-	"go.rtnl.ai/horizon/provider/types"
 )
 
 func TestProviderValidate(t *testing.T) {
@@ -17,7 +16,7 @@ func TestProviderValidate(t *testing.T) {
 
 	t.Run("requires supported API type", func(t *testing.T) {
 		conf := validProvider()
-		conf.APIType = types.APITypeUnknown
+		conf.APIType = provider.APITypeUnknown
 		require.ErrorIs(t, conf.Validate(), errors.ErrUnsupportedAPIType)
 	})
 
@@ -29,7 +28,7 @@ func TestProviderValidate(t *testing.T) {
 
 	t.Run("requires supported provider type", func(t *testing.T) {
 		conf := validProvider()
-		conf.ProviderType = types.ProviderTypeUnknown
+		conf.ProviderType = provider.ProviderTypeUnknown
 		require.ErrorIs(t, conf.Validate(), errors.ErrUnsupportedProviderType)
 	})
 
@@ -53,7 +52,7 @@ func TestProviderValidate(t *testing.T) {
 
 	t.Run("requires valid default model", func(t *testing.T) {
 		conf := validProvider()
-		conf.ProviderType = types.ProviderTypeOpenAICompatible
+		conf.ProviderType = provider.ProviderTypeOpenAICompatible
 		conf.DefaultModel = ""
 		require.ErrorIs(t, conf.Validate(), errors.ErrInvalidDefaultModel)
 	})
@@ -63,8 +62,8 @@ func validProvider() *provider.Config {
 	return &provider.Config{
 		InferenceEndpoint: "https://openrouter.ai/api/v1",
 		CatalogEndpoint:   "https://openrouter.ai/api/v1/models",
-		ProviderType:      types.ProviderTypeOpenRouter,
-		APIType:           types.APITypeOpenAIChatCompletions,
+		ProviderType:      provider.ProviderTypeOpenRouter,
+		APIType:           provider.APITypeOpenAIChatCompletions,
 		DefaultModel:      "default/model",
 		Credentials:       credtest.APIKey("secret"),
 	}

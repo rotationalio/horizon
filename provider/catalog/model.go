@@ -5,7 +5,6 @@ import (
 
 	"go.rtnl.ai/horizon/modality"
 	"go.rtnl.ai/horizon/provider/auth"
-	"go.rtnl.ai/horizon/provider/types"
 	"go.rtnl.ai/tidal/fields"
 )
 
@@ -13,7 +12,7 @@ import (
 // display metadata normalized from provider wire formats and is the shape
 // written to JSONB catalog columns in persistence adapters.
 type Model struct {
-	ProviderType types.ProviderType `json:"provider_type"`
+	//FIXME: do we need this? causes import cycle // ProviderType provider.ProviderType `json:"provider_type"`
 
 	// Common display metadata.
 
@@ -35,21 +34,21 @@ type Model struct {
 
 	// Model-specific links and metadata.
 
-	Links        Links                   `json:"links,omitzero"`
-	Architecture Architecture            `json:"architecture,omitzero"`
-	Parameters   Parameters              `json:"parameters,omitzero"`
+	Links        Links           `json:"links,omitzero"`
+	Architecture Architecture    `json:"architecture,omitzero"`
+	Parameters   Parameters      `json:"parameters,omitzero"`
 	Capabilities ModelCapability `json:"capabilities,omitzero"`
-	Pricing      Pricing                 `json:"pricing,omitzero"`
-	Limits       Limits                  `json:"limits,omitzero"`
+	Pricing      Pricing         `json:"pricing,omitzero"`
+	Limits       Limits          `json:"limits,omitzero"`
 
 	// TODO: figure out a common format for energy usage
 	EnergyUsage fields.NullJSONB `json:"energy_usage,omitzero"`
 
 	// Model-specific API, endpoint, and auth overrides. Not commonly used.
 
-	APIType  types.APIType `json:"api_type,omitzero"`
-	Endpoint string           `json:"endpoint,omitempty"`
-	AuthType auth.Type        `json:"auth_type,omitzero"`
+	//FIXME: do we need this? causes import cycle // APIType  provider.APIType `json:"api_type,omitzero"`
+	Endpoint string    `json:"endpoint,omitempty"`
+	AuthType auth.Type `json:"auth_type,omitzero"`
 }
 
 // Links is the list of related resources for a model.

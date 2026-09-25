@@ -3,14 +3,14 @@ package mock
 import (
 	"context"
 
-	"go.rtnl.ai/endeavor/pkg/errors"
-	"go.rtnl.ai/endeavor/pkg/horizon"
-	"go.rtnl.ai/endeavor/pkg/horizon/catalog"
-	"go.rtnl.ai/endeavor/pkg/horizon/catalog/governance"
-	"go.rtnl.ai/endeavor/pkg/horizon/client/types"
+	"go.rtnl.ai/horizon/errors"
+	"go.rtnl.ai/horizon/internal/mock"
+	"go.rtnl.ai/horizon/provider"
+	"go.rtnl.ai/horizon/provider/catalog"
 )
 
 const (
+	Generate          = "Generate"
 	FetchCatalog      = "FetchCatalog"
 	RetrieveModel     = "RetrieveModel"
 	CheckConnectivity = "CheckConnectivity"
@@ -19,43 +19,45 @@ const (
 )
 
 type MockProvider struct {
-	Mock
-	OnGenerate          func(ctx context.Context, req *horizon.Request) (*horizon.Response, error)
-	OnFetchCatalog      func(ctx context.Context, policies ...governance.Policy) ([]catalog.Model, error)
-	OnRetrieveModel     func(ctx context.Context, modelID string, policies ...governance.Policy) (*catalog.Model, error)
-	OnCheckConnectivity func(ctx context.Context) (types.Status, error)
+	mock.Mock
+	OnGenerate          func(ctx context.Context, req *provider.Request) (*provider.Response, error)
+	OnFetchCatalog      func(ctx context.Context) ([]catalog.Model, error)
+	OnRetrieveModel     func(ctx context.Context, modelID string) (*catalog.Model, error)
+	OnCheckConnectivity func(ctx context.Context) (provider.Status, error)
 }
 
-func NewProvider() *MockProvider {
+var _ provider.Provider = (*MockProvider)(nil)
+
+func New() *MockProvider {
 	return &MockProvider{}
 }
 
-func (m *MockProvider) Generate(ctx context.Context, req *horizon.Request) (*horizon.Response, error) {
-	m.call(Generate)
+func (m *MockProvider) Generate(ctx context.Context, req *provider.Request) (*provider.Response, error) {
+	m.Call(Generate)
 	if m.OnGenerate != nil {
 		return m.OnGenerate(ctx, req)
 	}
 	panic(errors.Fmt("%s callback is not mocked", Generate))
 }
 
-func (m *MockProvider) FetchCatalog(ctx context.Context, policies ...governance.Policy) ([]catalog.Model, error) {
-	m.call(FetchCatalog)
+func (m *MockProvider) FetchCatalog(ctx context.Context) ([]catalog.Model, error) {
+	m.Call(FetchCatalog)
 	if m.OnFetchCatalog != nil {
-		return m.OnFetchCatalog(ctx, policies...)
+		return m.OnFetchCatalog(ctx)
 	}
 	panic(errors.Fmt("%s callback is not mocked", FetchCatalog))
 }
 
-func (m *MockProvider) RetrieveModel(ctx context.Context, modelID string, policies ...governance.Policy) (*catalog.Model, error) {
-	m.call(RetrieveModel)
+func (m *MockProvider) RetrieveModel(ctx context.Context, modelID string) (*catalog.Model, error) {
+	m.Call(RetrieveModel)
 	if m.OnRetrieveModel != nil {
-		return m.OnRetrieveModel(ctx, modelID, policies...)
+		return m.OnRetrieveModel(ctx, modelID)
 	}
 	panic(errors.Fmt("%s callback is not mocked", RetrieveModel))
 }
 
-func (m *MockProvider) CheckConnectivity(ctx context.Context) (types.Status, error) {
-	m.call(CheckConnectivity)
+func (m *MockProvider) CheckConnectivity(ctx context.Context) (provider.Status, error) {
+	m.Call(CheckConnectivity)
 	if m.OnCheckConnectivity != nil {
 		return m.OnCheckConnectivity(ctx)
 	}

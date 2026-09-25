@@ -12,6 +12,7 @@ require (
 	go.rtnl.ai/ulid v1.3.0
 	go.rtnl.ai/x v1.21.0
 	golang.org/x/oauth2 v0.37.0
+	gopkg.in/yaml.v3 v3.0.1
 )
 
 require (

@@ -6,7 +6,7 @@ import (
 	"github.com/stretchr/testify/require"
 	"go.rtnl.ai/horizon/errors"
 	"go.rtnl.ai/horizon/provider"
-	"go.rtnl.ai/horizon/provider/auth/credtest"
+	"go.rtnl.ai/horizon/provider/auth"
 )
 
 func TestProviderValidate(t *testing.T) {
@@ -46,7 +46,7 @@ func TestProviderValidate(t *testing.T) {
 
 	t.Run("requires valid credentials", func(t *testing.T) {
 		conf := validProvider()
-		conf.Credentials = credtest.APIKey("")
+		conf.Credentials = auth.NewAPIKey("")
 		require.ErrorIs(t, conf.Validate(), errors.ErrInvalidCredentials)
 	})
 
@@ -65,6 +65,6 @@ func validProvider() *provider.Config {
 		ProviderType:      provider.ProviderTypeOpenRouter,
 		APIType:           provider.APITypeOpenAIChatCompletions,
 		DefaultModel:      "default/model",
-		Credentials:       credtest.APIKey("secret"),
+		Credentials:       auth.NewAPIKey("secret"),
 	}
 }

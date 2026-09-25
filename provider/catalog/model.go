@@ -12,7 +12,9 @@ import (
 // display metadata normalized from provider wire formats and is the shape
 // written to JSONB catalog columns in persistence adapters.
 type Model struct {
-	//FIXME: do we need this? causes import cycle // ProviderType provider.ProviderType `json:"provider_type"`
+	//FIXME: we can probably remove this, and allow the app to link a provider to it's catalog, otherwise just make
+	// it a pure string and we'll handle it on the other side
+	// ProviderType provider.ProviderType `json:"provider_type"`
 
 	// Common display metadata.
 
@@ -46,7 +48,8 @@ type Model struct {
 
 	// Model-specific API, endpoint, and auth overrides. Not commonly used.
 
-	//FIXME: do we need this? causes import cycle // APIType  provider.APIType `json:"api_type,omitzero"`
+	//FIXME: we can probably remove this as it's more of an override for our application? or make it a pure string
+	// APIType  provider.APIType `json:"api_type,omitzero"`
 	Endpoint string    `json:"endpoint,omitempty"`
 	AuthType auth.Type `json:"auth_type,omitzero"`
 }

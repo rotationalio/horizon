@@ -28,8 +28,6 @@ Fixes SC-XXXXX
 
 - [ ] I have manually tested the change and/or added automation in the form of unit tests or integration tests
 - [ ] I have updated the dependencies list
-- [ ] I have added new test fixtures as needed to support added tests
 - [ ] I have added or updated the documentation (README.md, `/docs/` directory, package docs, tool docs, etc.)
-- [ ] I have added any new static files in accordance with the README section "Web static assets"
 - [ ] I have run go generate to update generated code (enums, OpenAPI docs, web static assets, etc.)
 - [ ] Check this box if a reviewer can merge this pull request after approval (leave it unchecked if you want to do it yourself)

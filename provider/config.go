@@ -1,7 +1,9 @@
 package provider
 
 import (
+	"fmt"
 	"net/url"
+	"slices"
 	"time"
 
 	"go.rtnl.ai/horizon/errors"
@@ -31,20 +33,33 @@ type Config struct {
 }
 
 func (p *Config) Validate() (err error) {
-	// Require API type and inference endpoint. Also cache it now to save a parsing.
+	if p == nil {
+		return errors.ErrUnsupportedProviderType
+	}
+
 	if p.APIType == APITypeUnknown {
 		return errors.ErrUnsupportedAPIType
 	}
-	if p.inference, err = url.Parse(p.InferenceEndpoint); err != nil {
-		return errors.Join(errors.ErrInvalidInferenceEndpoint, err)
-	}
 
-	// Require provider type and catalog endpoint. Also cache it now to save a parsing.
 	if p.ProviderType == ProviderTypeUnknown {
 		return errors.ErrUnsupportedProviderType
 	}
-	if p.catalog, err = url.Parse(p.CatalogEndpoint); err != nil {
-		return errors.Join(errors.ErrInvalidCatalogEndpoint, err)
+	registration, exists := LookupRegistration(p.ProviderType)
+	if !exists {
+		return errors.Join(errors.ErrUnsupportedProviderType, errors.Fmt("%s is not registered", p.ProviderType))
+	}
+	if !slices.Contains(registration.APITypes, p.APIType) {
+		return errors.Join(errors.ErrUnsupportedAPIType, errors.Fmt("%s does not support %s", p.ProviderType, p.APIType))
+	}
+
+	// Mock providers do not make network requests and therefore need no endpoints.
+	if p.ProviderType != ProviderTypeMock {
+		if p.inference, err = parseEndpoint(p.InferenceEndpoint); err != nil {
+			return errors.Join(errors.ErrInvalidInferenceEndpoint, err)
+		}
+		if p.catalog, err = parseEndpoint(p.CatalogEndpoint); err != nil {
+			return errors.Join(errors.ErrInvalidCatalogEndpoint, err)
+		}
 	}
 
 	// Require a default model if the provider type is openai_compatible. Other
@@ -62,8 +77,25 @@ func (p *Config) Validate() (err error) {
 	if err = p.Credentials.Validate(); err != nil {
 		return errors.Join(errors.ErrInvalidCredentials, err)
 	}
+	if !slices.Contains(registration.AuthTypes, p.Credentials.Type()) {
+		return errors.Join(errors.ErrInvalidCredentials, errors.Fmt("%s does not support %s credentials", p.ProviderType, p.Credentials.Type()))
+	}
 
 	return nil
+}
+
+func parseEndpoint(raw string) (*url.URL, error) {
+	endpoint, err := url.Parse(raw)
+	if err != nil {
+		return nil, err
+	}
+	if endpoint.Scheme != "http" && endpoint.Scheme != "https" {
+		return nil, fmt.Errorf("endpoint must use http or https")
+	}
+	if endpoint.Host == "" {
+		return nil, fmt.Errorf("endpoint must include a host")
+	}
+	return endpoint, nil
 }
 
 // Returns the inference endpoint URL. If the URL in the config is invalid,
@@ -87,14 +119,22 @@ func (p *Config) CatalogURL() *url.URL {
 // Compares two provider configurations for equality. Credentials secrets are
 // not compared, however their types must match and they must both be valid.
 func (p *Config) Equals(other *Config) bool {
+	if p == nil || other == nil {
+		return p == other
+	}
+	if p.Credentials == nil || other.Credentials == nil {
+		return false
+	}
+	if p.Validate() != nil || other.Validate() != nil {
+		return false
+	}
+
 	return p.APIType == other.APIType &&
 		p.InferenceEndpoint == other.InferenceEndpoint &&
 		p.ProviderType == other.ProviderType &&
 		p.CatalogEndpoint == other.CatalogEndpoint &&
 		p.DefaultModel == other.DefaultModel &&
-		p.Credentials.Type() == other.Credentials.Type() &&
-		p.Credentials.Validate() == nil &&
-		other.Validate() == nil
+		p.Credentials.Type() == other.Credentials.Type()
 }
 
 // Returns true if the provider configuration is empty.

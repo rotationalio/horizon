@@ -6,6 +6,7 @@ import (
 	"go.rtnl.ai/horizon/errors"
 	"go.rtnl.ai/horizon/internal/mock"
 	"go.rtnl.ai/horizon/provider"
+	"go.rtnl.ai/horizon/provider/auth"
 	"go.rtnl.ai/horizon/provider/catalog"
 )
 
@@ -27,6 +28,27 @@ type MockProvider struct {
 }
 
 var _ provider.Provider = (*MockProvider)(nil)
+
+func init() {
+	provider.Register(provider.ProviderTypeMock, provider.Registration{
+		Factory: func(provider.Config) (provider.Provider, error) {
+			return New(), nil
+		},
+		APITypes: []provider.APIType{
+			provider.APITypeMock,
+			provider.APITypeOpenAIResponses,
+			provider.APITypeOpenAIChatCompletions,
+		},
+		AuthTypes: []auth.Type{
+			auth.TypeAPIKey,
+			auth.TypeToken,
+			auth.TypeBasic,
+			auth.TypeOAuth2Client,
+			auth.TypeOpenAIOrganization,
+			auth.TypeNone,
+		},
+	})
+}
 
 func New() *MockProvider {
 	return &MockProvider{}

@@ -5,11 +5,9 @@ import (
 	"encoding/json"
 	"time"
 
-	"go.rtnl.ai/endeavor/pkg/horizon/catalog"
-	"go.rtnl.ai/endeavor/pkg/horizon/catalog/governance"
-	"go.rtnl.ai/endeavor/pkg/horizon/client/config"
-	"go.rtnl.ai/endeavor/pkg/horizon/client/types"
-	"go.rtnl.ai/endeavor/pkg/horizon/http"
+	"go.rtnl.ai/horizon/http"
+	"go.rtnl.ai/horizon/provider"
+	"go.rtnl.ai/horizon/provider/catalog"
 )
 
 //=============================================================================
@@ -22,17 +20,17 @@ const ConnectivityModel = "gpt-4o-mini"
 // CatalogClient fetches model metadata from the OpenAI models API.
 // See https://platform.openai.com/docs/api-reference/models
 type CatalogClient struct {
-	conf config.Provider
+	conf provider.Config
 }
 
 // NewCatalog creates an OpenAI catalog client.
-func NewCatalog(conf config.Provider) (*CatalogClient, error) {
+func NewCatalog(conf provider.Config) (*CatalogClient, error) {
 	return &CatalogClient{conf: conf}, nil
 }
 
-// Fetch returns models from the OpenAI catalog.
-func (c *CatalogClient) Fetch(ctx context.Context, policies ...governance.Policy) ([]catalog.Model, error) {
-	body, err := http.CatalogGet(ctx, c.conf.CatalogEndpoint, "", c.conf.Credentials)
+// Returns models from the OpenAI catalog.
+func (c *CatalogClient) FetchCatalog(ctx context.Context) ([]catalog.Model, error) {
+	body, err := http.GetSuffix(ctx, c.conf.CatalogEndpoint, "", c.conf.Credentials)
 	if err != nil {
 		return nil, err
 	}
@@ -42,22 +40,18 @@ func (c *CatalogClient) Fetch(ctx context.Context, policies ...governance.Policy
 		return nil, err
 	}
 
-	return catalog.ApplyAll(models, policies...)
+	return models, nil
 }
 
-// Retrieve returns one model from the OpenAI catalog.
-func (c *CatalogClient) Retrieve(ctx context.Context, modelID string, policies ...governance.Policy) (*catalog.Model, error) {
-	body, err := http.CatalogGet(ctx, c.conf.CatalogEndpoint, modelID, c.conf.Credentials)
+// Returns one model from the OpenAI catalog.
+func (c *CatalogClient) RetrieveModel(ctx context.Context, modelID string) (*catalog.Model, error) {
+	body, err := http.GetSuffix(ctx, c.conf.CatalogEndpoint, modelID, c.conf.Credentials)
 	if err != nil {
 		return nil, err
 	}
 
 	model, err := DecodeModelJSON(body)
 	if err != nil {
-		return nil, err
-	}
-
-	if err := catalog.ApplyPolicies(&model, policies...); err != nil {
 		return nil, err
 	}
 
@@ -87,11 +81,10 @@ type WireList struct {
 // ModelFromWire converts an OpenAI models API object into a catalog model.
 func ModelFromWire(wire WireModel) catalog.Model {
 	return catalog.Model{
-		ProviderType: types.ProviderTypeOpenAI,
-		Name:         wire.ID,
-		Slug:         wire.ID,
-		Author:       wire.OwnedBy,
-		Published:    time.Unix(wire.Created, 0),
+		Name:      wire.ID,
+		Slug:      wire.ID,
+		Author:    wire.OwnedBy,
+		Published: time.Unix(wire.Created, 0),
 	}
 }
 

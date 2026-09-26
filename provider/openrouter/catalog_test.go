@@ -9,19 +9,18 @@ import (
 	"time"
 
 	"github.com/stretchr/testify/require"
-	"go.rtnl.ai/endeavor/pkg/horizon/catalog"
-	"go.rtnl.ai/endeavor/pkg/horizon/client/auth/credtest"
-	"go.rtnl.ai/endeavor/pkg/horizon/client/config"
-	"go.rtnl.ai/endeavor/pkg/horizon/client/types"
-	"go.rtnl.ai/endeavor/pkg/horizon/modality"
-	"go.rtnl.ai/endeavor/pkg/horizon/openrouter"
+	"go.rtnl.ai/horizon/modality"
+	"go.rtnl.ai/horizon/provider"
+	"go.rtnl.ai/horizon/provider/auth"
+	"go.rtnl.ai/horizon/provider/catalog"
+	"go.rtnl.ai/horizon/provider/openrouter"
 )
 
 //=============================================================================
 // Decode tests
 //=============================================================================
 
-// TestDecodeModelJSON verifies a single OpenRouter model payload decodes into catalog.Model.
+// Verifies a single OpenRouter model payload decodes into catalog.Model.
 func TestDecodeModelJSON(t *testing.T) {
 	client := testCatalogClient(t)
 
@@ -30,7 +29,7 @@ func TestDecodeModelJSON(t *testing.T) {
 	assertExampleGPT4Model(t, model)
 }
 
-// TestDecodeListJSON verifies an OpenRouter list-models payload decodes every entry.
+// Verifies an OpenRouter list-models payload decodes every entry.
 func TestDecodeListJSON(t *testing.T) {
 	client := testCatalogClient(t)
 
@@ -49,24 +48,44 @@ func TestDecodeListJSON(t *testing.T) {
 // Catalog client tests
 //=============================================================================
 
-// TestFetch exercises CatalogClient.Fetch against a stub HTTP server.
+// Exercises catalog fetching against a stub HTTP server.
 func TestFetch(t *testing.T) {
 	client, origin := testCatalogClientWithServer(t)
 
-	models, err := client.Fetch(context.Background())
+	models, err := client.FetchCatalog(context.Background())
 	require.NoError(t, err)
 	require.Len(t, models, 3)
 	assertExampleGPT4Model(t, models[0], origin)
 }
 
-// TestRetrieve exercises CatalogClient.Retrieve against the OpenRouter single-model endpoint.
+// Exercises catalog retrieval against the OpenRouter single-model endpoint.
 func TestRetrieve(t *testing.T) {
 	client, origin := testCatalogClientWithServer(t)
 
-	model, err := client.Retrieve(context.Background(), "openai/gpt-4")
+	model, err := client.RetrieveModel(context.Background(), "openai/gpt-4")
 	require.NoError(t, err)
 	require.NotNil(t, model)
 	assertExampleGPT4Model(t, *model, origin)
+}
+
+// Calls the real OpenRouter models API; skips with -short.
+func TestFetchLive(t *testing.T) {
+	if testing.Short() {
+		t.Skip("skipping live OpenRouter catalog test in short mode")
+	}
+
+	client := testCatalogClient(t)
+
+	models, err := client.FetchCatalog(context.Background())
+	require.NoError(t, err)
+	require.Greater(t, len(models), 1)
+
+	for _, model := range models {
+		require.NotEmpty(t, model.Slug)
+		require.NotEmpty(t, model.Name)
+		require.Contains(t, model.Slug, "/")
+		require.False(t, model.Published.IsZero())
+	}
 }
 
 //=============================================================================
@@ -190,7 +209,6 @@ func assertExampleGPT4Model(t *testing.T, model catalog.Model, catalogOrigin ...
 		origin = strings.TrimRight(catalogOrigin[0], "/")
 	}
 
-	require.Equal(t, types.ProviderTypeOpenRouter, model.ProviderType)
 	require.Equal(t, "openai/gpt-4", model.Slug)
 	require.Equal(t, "OpenAI: GPT-4", model.Name)
 	require.Equal(t, expectedGPT4Desc, model.Description)
@@ -300,43 +318,15 @@ func assertExampleGPT4Model(t *testing.T, model catalog.Model, catalogOrigin ...
 	}, model.Links[1])
 
 	require.False(t, model.EnergyUsage.Valid)
-	require.Zero(t, model.APIType)
 	require.Empty(t, model.Endpoint)
 	require.Zero(t, model.AuthType)
-	require.False(t, model.Restricted)
-	require.Empty(t, model.Policies)
-}
-
-//=============================================================================
-// Live tests and helpers
-//=============================================================================
-
-// TestFetchLive calls the real OpenRouter models API. Skipped with -short.
-func TestFetchLive(t *testing.T) {
-	if testing.Short() {
-		t.Skip("skipping live OpenRouter catalog test in short mode")
-	}
-
-	client := testCatalogClient(t)
-
-	models, err := client.Fetch(context.Background())
-	require.NoError(t, err)
-	require.Greater(t, len(models), 1)
-
-	for _, model := range models {
-		require.Equal(t, types.ProviderTypeOpenRouter, model.ProviderType)
-		require.NotEmpty(t, model.Slug)
-		require.NotEmpty(t, model.Name)
-		require.Contains(t, model.Slug, "/")
-		require.False(t, model.Published.IsZero())
-	}
 }
 
 // testCatalogClient returns a catalog client pointed at the production OpenRouter endpoint.
 func testCatalogClient(t *testing.T) *openrouter.CatalogClient {
 	t.Helper()
 
-	client, err := openrouter.NewCatalog(config.Provider{
+	client, err := openrouter.NewCatalog(provider.Config{
 		CatalogEndpoint: "https://openrouter.ai/api/v1/models",
 	})
 	require.NoError(t, err)
@@ -367,9 +357,9 @@ func testCatalogClientWithServer(t *testing.T) (*openrouter.CatalogClient, strin
 	}))
 	t.Cleanup(ts.Close)
 
-	client, err := openrouter.NewCatalog(config.Provider{
+	client, err := openrouter.NewCatalog(provider.Config{
 		CatalogEndpoint: ts.URL + "/api/v1/models",
-		Credentials:     credtest.APIKey("test-key"),
+		Credentials:     auth.NewAPIKey("test-key"),
 	})
 	require.NoError(t, err)
 	return client, ts.URL

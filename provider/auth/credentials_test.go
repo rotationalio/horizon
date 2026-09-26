@@ -10,6 +10,8 @@ import (
 	"golang.org/x/oauth2"
 )
 
+// Verifies every credential variant accepts required fields, rejects missing
+// fields, and reports validation paths consistently.
 func TestCredentialsValidate(t *testing.T) {
 	t.Run("MissingDTO", func(t *testing.T) {
 		var creds *auth.Credentials
@@ -24,6 +26,10 @@ func TestCredentialsValidate(t *testing.T) {
 	t.Run("BlankCustomFieldPathFallsBackToCredentials", func(t *testing.T) {
 		var creds *auth.Credentials
 		errors.RequireValidationFields(t, creds.ValidateFor("   "), "credentials")
+	})
+
+	t.Run("NoneValid", func(t *testing.T) {
+		require.NoError(t, auth.NewNone().Validate())
 	})
 
 	t.Run("APIKeyValid", func(t *testing.T) {
@@ -90,8 +96,8 @@ func TestCredentialsValidate(t *testing.T) {
 	})
 
 	t.Run("OpenAIOrganizationMissingFields", func(t *testing.T) {
-		creds := auth.NewOpenAIOrganization("key", "", "")
-		errors.RequireValidationFields(t, creds.Validate(), "organization", "project")
+		creds := auth.NewOpenAIOrganization("", "", "")
+		errors.RequireValidationFields(t, creds.Validate(), "api_key", "organization", "project")
 	})
 
 	t.Run("UnknownType", func(t *testing.T) {
@@ -106,6 +112,8 @@ func TestCredentialsValidate(t *testing.T) {
 	})
 }
 
+// Verifies user-controlled credential fields are trimmed without changing the
+// credential variant or semantic values.
 func TestCredentialsNormalize(t *testing.T) {
 	tests := []struct {
 		name string
@@ -153,11 +161,14 @@ func TestCredentialsNormalize(t *testing.T) {
 	}
 }
 
+// Verifies credential type reporting for populated and nil credentials.
 func TestCredentialsType(t *testing.T) {
 	require.Equal(t, auth.TypeAPIKey, auth.NewAPIKey("k").Type())
 	require.Equal(t, auth.TypeUnknown, (*auth.Credentials)(nil).Type())
 }
 
+// Verifies credentials preserve their variant and values through JSON
+// serialization.
 func TestCredentialsJSONRoundTrip(t *testing.T) {
 	orig := auth.NewOpenAIOrganization("key", "org", "project")
 	data, err := json.Marshal(orig)

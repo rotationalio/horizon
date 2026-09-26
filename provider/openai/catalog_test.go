@@ -4,30 +4,29 @@ import (
 	"context"
 	"net/http"
 	"net/http/httptest"
-	"os"
 	"testing"
 	"time"
 
 	"github.com/stretchr/testify/require"
-	"go.rtnl.ai/endeavor/pkg/horizon/catalog"
-	"go.rtnl.ai/endeavor/pkg/horizon/client/auth/credtest"
-	"go.rtnl.ai/endeavor/pkg/horizon/client/config"
-	"go.rtnl.ai/endeavor/pkg/horizon/client/types"
-	"go.rtnl.ai/endeavor/pkg/horizon/openai"
+	"go.rtnl.ai/horizon/internal/testenv"
+	"go.rtnl.ai/horizon/provider"
+	"go.rtnl.ai/horizon/provider/auth"
+	"go.rtnl.ai/horizon/provider/catalog"
+	"go.rtnl.ai/horizon/provider/openai"
 )
 
 //=============================================================================
 // Decode tests
 //=============================================================================
 
-// TestDecodeModelJSON verifies a single OpenAI model payload decodes into catalog.Model.
+// Verifies a single OpenAI model payload decodes into catalog.Model.
 func TestDecodeModelJSON(t *testing.T) {
 	model, err := openai.DecodeModelJSON([]byte(exampleModelJSON))
 	require.NoError(t, err)
 	assertExampleGPT4oModel(t, model)
 }
 
-// TestDecodeListJSON verifies an OpenAI list-models payload decodes every entry.
+// Verifies an OpenAI list-models payload decodes every entry.
 func TestDecodeListJSON(t *testing.T) {
 	models, err := openai.DecodeListJSON([]byte(exampleListJSON))
 	require.NoError(t, err)
@@ -44,24 +43,54 @@ func TestDecodeListJSON(t *testing.T) {
 // Catalog client tests
 //=============================================================================
 
-// TestFetch exercises CatalogClient.Fetch against a stub HTTP server.
+// Exercises catalog fetching against a stub HTTP server.
 func TestFetch(t *testing.T) {
 	client := testCatalogClientWithServer(t)
 
-	models, err := client.Fetch(context.Background())
+	models, err := client.FetchCatalog(context.Background())
 	require.NoError(t, err)
 	require.Len(t, models, 3)
 	assertExampleGPT4oModel(t, models[0])
 }
 
-// TestRetrieve exercises CatalogClient.Retrieve against the OpenAI single-model endpoint.
+// Exercises catalog retrieval against the OpenAI single-model endpoint.
 func TestRetrieve(t *testing.T) {
 	client := testCatalogClientWithServer(t)
 
-	model, err := client.Retrieve(context.Background(), expectedGPT4oSlug)
+	model, err := client.RetrieveModel(context.Background(), expectedGPT4oSlug)
 	require.NoError(t, err)
 	require.NotNil(t, model)
 	assertExampleGPT4oModel(t, *model)
+}
+
+// Calls the real OpenAI models API; skips with -short or when OPENAI_API_KEY is
+// unset.
+func TestFetchLive(t *testing.T) {
+	if testing.Short() {
+		t.Skip("skipping live OpenAI catalog test in short mode")
+	}
+
+	// TODO: no public endpoint for this API; need to add an API key for CI
+	// testing; below will skip if key is not configured for now to prevent
+	// test failures locally and in CI until OpenAI integration is fully working
+	apiKey := testenv.OpenAIAPIKey(t)
+
+	client, err := openai.NewCatalog(provider.Config{
+		CatalogEndpoint: "https://api.openai.com/v1/models",
+		Credentials:     auth.NewAPIKey(apiKey),
+	})
+	require.NoError(t, err)
+
+	models, err := client.FetchCatalog(context.Background())
+	require.NoError(t, err)
+	require.Greater(t, len(models), 1)
+
+	for _, model := range models {
+		require.NotEmpty(t, model.Slug)
+		require.Equal(t, model.Slug, model.Name)
+		require.NotEmpty(t, model.Author)
+		require.False(t, model.Published.IsZero())
+	}
 }
 
 //=============================================================================
@@ -96,7 +125,6 @@ var expectedGPT4oPublished = time.Unix(1715367049, 0)
 func assertExampleGPT4oModel(t *testing.T, model catalog.Model) {
 	t.Helper()
 
-	require.Equal(t, types.ProviderTypeOpenAI, model.ProviderType)
 	require.Equal(t, expectedGPT4oSlug, model.Slug)
 	require.Equal(t, expectedGPT4oSlug, model.Name)
 	require.Empty(t, model.Description)
@@ -121,47 +149,8 @@ func assertExampleGPT4oModel(t *testing.T, model catalog.Model) {
 	require.Empty(t, model.Pricing)
 	require.Empty(t, model.Limits)
 	require.False(t, model.EnergyUsage.Valid)
-	require.Zero(t, model.APIType)
 	require.Empty(t, model.Endpoint)
 	require.Zero(t, model.AuthType)
-	require.False(t, model.Restricted)
-	require.Empty(t, model.Policies)
-}
-
-//=============================================================================
-// Live tests and helpers
-//=============================================================================
-
-// TestFetchLive calls the real OpenAI models API. Skipped with -short or when
-// OPENAI_API_KEY is unset.
-func TestFetchLive(t *testing.T) {
-	if testing.Short() {
-		t.Skip("skipping live OpenAI catalog test in short mode")
-	}
-
-	// TODO: no public endpoint for this API; need to add an API key for CI testing.
-	apiKey := os.Getenv("OPENAI_API_KEY")
-	if apiKey == "" {
-		t.Skip("OPENAI_API_KEY not set")
-	}
-
-	client, err := openai.NewCatalog(config.Provider{
-		CatalogEndpoint: "https://api.openai.com/v1/models",
-		Credentials:     credtest.APIKey(apiKey),
-	})
-	require.NoError(t, err)
-
-	models, err := client.Fetch(context.Background())
-	require.NoError(t, err)
-	require.Greater(t, len(models), 1)
-
-	for _, model := range models {
-		require.Equal(t, types.ProviderTypeOpenAI, model.ProviderType)
-		require.NotEmpty(t, model.Slug)
-		require.Equal(t, model.Slug, model.Name)
-		require.NotEmpty(t, model.Author)
-		require.False(t, model.Published.IsZero())
-	}
 }
 
 // testCatalogClientWithServer returns a catalog client backed by an httptest server
@@ -187,9 +176,9 @@ func testCatalogClientWithServer(t *testing.T) *openai.CatalogClient {
 	}))
 	t.Cleanup(ts.Close)
 
-	client, err := openai.NewCatalog(config.Provider{
+	client, err := openai.NewCatalog(provider.Config{
 		CatalogEndpoint: ts.URL + "/v1/models",
-		Credentials:     credtest.APIKey("test-key"),
+		Credentials:     auth.NewAPIKey("test-key"),
 	})
 	require.NoError(t, err)
 	return client

@@ -9,14 +9,11 @@ import (
 	"strings"
 	"time"
 
-	"go.rtnl.ai/endeavor/pkg/horizon/capabilities"
-	"go.rtnl.ai/endeavor/pkg/horizon/catalog"
-	"go.rtnl.ai/endeavor/pkg/horizon/catalog/governance"
-	"go.rtnl.ai/endeavor/pkg/horizon/client/config"
-	"go.rtnl.ai/endeavor/pkg/horizon/client/types"
-	"go.rtnl.ai/endeavor/pkg/horizon/http"
-	"go.rtnl.ai/endeavor/pkg/horizon/modality"
-	"go.rtnl.ai/endeavor/pkg/horizon/params"
+	"go.rtnl.ai/horizon/http"
+	"go.rtnl.ai/horizon/modality"
+	"go.rtnl.ai/horizon/params"
+	"go.rtnl.ai/horizon/provider"
+	"go.rtnl.ai/horizon/provider/catalog"
 )
 
 //=============================================================================
@@ -32,30 +29,30 @@ const ConnectivityModel = "google/gemini-2.5-flash-lite"
 // CatalogClient fetches model metadata from the OpenRouter models API.
 // See https://openrouter.ai/docs/api/api-reference/models/get-models
 type CatalogClient struct {
-	conf config.Provider
+	conf provider.Config
 }
 
 // NewCatalog creates an OpenRouter catalog client.
-func NewCatalog(conf config.Provider) (*CatalogClient, error) {
+func NewCatalog(conf provider.Config) (*CatalogClient, error) {
 	return &CatalogClient{conf: conf}, nil
 }
 
 // Config returns the provider configuration for this catalog client.
-func (c *CatalogClient) Config() config.Provider {
+func (c *CatalogClient) Config() provider.Config {
 	if c == nil {
-		return config.Provider{}
+		return provider.Config{}
 	}
 	return c.conf
 }
 
-// Fetch returns models from the OpenRouter catalog.
-func (c *CatalogClient) Fetch(ctx context.Context, policies ...governance.Policy) ([]catalog.Model, error) {
+// Returns models from the OpenRouter catalog.
+func (c *CatalogClient) FetchCatalog(ctx context.Context) ([]catalog.Model, error) {
 	endpoint, err := catalogEndpointWithAllModalities(c.conf.CatalogEndpoint)
 	if err != nil {
 		return nil, err
 	}
 
-	body, err := http.CatalogGet(ctx, endpoint, "", c.conf.Credentials)
+	body, err := http.GetSuffix(ctx, endpoint, "", c.conf.Credentials)
 	if err != nil {
 		return nil, err
 	}
@@ -65,7 +62,7 @@ func (c *CatalogClient) Fetch(ctx context.Context, policies ...governance.Policy
 		return nil, err
 	}
 
-	return catalog.ApplyAll(models, policies...)
+	return models, nil
 }
 
 // Specify the modalities explicitly to ensure all models are returned.
@@ -83,8 +80,8 @@ func catalogEndpointWithAllModalities(endpoint string) (string, error) {
 	return parsed.String(), nil
 }
 
-// Retrieve returns one model from the OpenRouter catalog.
-func (c *CatalogClient) Retrieve(ctx context.Context, modelID string, policies ...governance.Policy) (*catalog.Model, error) {
+// Returns one model from the OpenRouter catalog.
+func (c *CatalogClient) RetrieveModel(ctx context.Context, modelID string) (*catalog.Model, error) {
 	endpoint := strings.TrimSuffix(c.conf.CatalogEndpoint, "/")
 	endpoint = strings.TrimSuffix(endpoint, "/models") + "/model/" + strings.TrimPrefix(modelID, "/")
 
@@ -102,10 +99,6 @@ func (c *CatalogClient) Retrieve(ctx context.Context, modelID string, policies .
 
 	model, err := c.ModelFromWire(wire.Data)
 	if err != nil {
-		return nil, err
-	}
-
-	if err := catalog.ApplyPolicies(&model, policies...); err != nil {
 		return nil, err
 	}
 
@@ -192,7 +185,6 @@ func (c *CatalogClient) ModelFromWire(wire WireModel) (catalog.Model, error) {
 	}
 
 	out := catalog.Model{
-		ProviderType:   types.ProviderTypeOpenRouter,
 		Name:           name,
 		Slug:           slug,
 		Description:    wire.Description,
@@ -223,7 +215,7 @@ func (c *CatalogClient) ModelFromWire(wire WireModel) (catalog.Model, error) {
 	}
 
 	// Include tool turns parameter if the model supports tool calling.
-	if out.Capabilities&capabilities.Tools != 0 {
+	if out.Capabilities&catalog.Tools != 0 {
 		out.Parameters.Parameters = append(out.Parameters.Parameters, catalog.Parameter{
 			Tag:      params.MaxToolTurns,
 			Display:  "Max Tool Turns",
@@ -356,8 +348,8 @@ func parseWireModality(value string) (modality.Modality, bool) {
 // Capabilities conversion
 //=============================================================================
 
-func wireCapabilities(values []string) capabilities.ModelCapability {
-	var out capabilities.ModelCapability
+func wireCapabilities(values []string) catalog.ModelCapability {
+	var out catalog.ModelCapability
 	for _, value := range values {
 		if c, ok := parseWireCapability(value); ok {
 			out |= c
@@ -366,12 +358,12 @@ func wireCapabilities(values []string) capabilities.ModelCapability {
 	return out
 }
 
-func parseWireCapability(value string) (capabilities.ModelCapability, bool) {
+func parseWireCapability(value string) (catalog.ModelCapability, bool) {
 	switch strings.ToLower(strings.TrimSpace(value)) {
 	case "web_search_options":
-		return capabilities.WebSearch, true
+		return catalog.WebSearch, true
 	default:
-		c, err := capabilities.Parse(value)
+		c, err := catalog.Parse(value)
 		return c, err == nil
 	}
 }

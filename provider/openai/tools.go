@@ -1,5 +1,8 @@
 package openai
 
+// TODO: Reintroduce tool result and schema conversion when Horizon tool calling
+// is implemented.
+/*
 import (
 	"encoding/json"
 
@@ -56,3 +59,4 @@ func toolParameters(raw json.RawMessage) (map[string]any, error) {
 	}
 	return schema, nil
 }
+*/

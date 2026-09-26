@@ -1,23 +1,18 @@
 package openai_test
 
 import (
-	"context"
-	"encoding/json"
-	"strings"
 	"testing"
-	"time"
-
-	"github.com/stretchr/testify/require"
-	"go.rtnl.ai/endeavor/pkg/config/conftest"
-	"go.rtnl.ai/endeavor/pkg/horizon"
-	"go.rtnl.ai/endeavor/pkg/horizon/capabilities"
-	"go.rtnl.ai/endeavor/pkg/horizon/client/auth/credtest"
-	"go.rtnl.ai/endeavor/pkg/horizon/client/config"
-	"go.rtnl.ai/endeavor/pkg/horizon/client/types"
-	"go.rtnl.ai/endeavor/pkg/horizon/openai"
-	"go.rtnl.ai/ulid"
 )
 
+// Tool calling is intentionally deferred until the provider-neutral tool model
+// is implemented.
+func TestToolCallingIntegration(t *testing.T) {
+	t.Skip("tool calling is not implemented yet")
+}
+
+// TODO: Re-enable the live tool-calling suites once the provider-neutral tool
+// model and request loop are implemented.
+/*
 // Exercises a complete two-request Chat Completions tool exchange through
 // OpenRouter, including request serialization and response deserialization.
 func TestChatCompletionsToolCallingIntegration(t *testing.T) {
@@ -167,3 +162,4 @@ func requireFinalToolAnswer(t *testing.T, response *horizon.Response, expected s
 	}
 	require.Contains(t, strings.ToLower(content.String()), strings.ToLower(expected))
 }
+*/

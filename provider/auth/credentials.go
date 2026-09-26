@@ -179,6 +179,8 @@ func (c *Credentials) ValidateFor(field string) (err error) {
 	w := &c.wire
 
 	switch w.Type {
+	case TypeNone:
+		// No credential fields are required.
 	case TypeAPIKey:
 		if w.APIKey == "" {
 			err = validation.Error(err, validation.MissingField("api_key"))
@@ -206,6 +208,9 @@ func (c *Credentials) ValidateFor(field string) (err error) {
 			err = validation.Error(err, validation.MissingField("access_token"))
 		}
 	case TypeOpenAIOrganization:
+		if w.APIKey == "" {
+			err = validation.Error(err, validation.MissingField("api_key"))
+		}
 		if w.Organization == "" {
 			err = validation.Error(err, validation.MissingField("organization"))
 		}

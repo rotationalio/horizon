@@ -1,41 +1,22 @@
 package horizon
 
-import (
-	"fmt"
-
-	"go.rtnl.ai/x/semver"
-)
+import "go.rtnl.ai/horizon/version"
 
 // Version component constants for the current build.
 const (
-	VersionMajor         = 1
-	VersionMinor         = 0
-	VersionPatch         = 0
-	VersionReleaseLevel  = "beta"
-	VersionReleaseNumber = 1
+	VersionMajor         = version.Major
+	VersionMinor         = version.Minor
+	VersionPatch         = version.Patch
+	VersionReleaseLevel  = version.ReleaseLevel
+	VersionReleaseNumber = version.ReleaseNumber
 )
 
-// Version returns the semantic version for the current build.
+// Returns the semantic version for the current build.
 func Version(short bool) string {
-	vers := semver.Version{
-		Major:      VersionMajor,
-		Minor:      VersionMinor,
-		Patch:      VersionPatch,
-		PreRelease: PreRelease(),
-	}
-
-	if short {
-		return vers.Short()
-	}
-	return vers.String()
+	return version.String(short)
 }
 
+// Returns the prerelease component for the current build.
 func PreRelease() string {
-	if VersionReleaseLevel != "" && VersionReleaseLevel != "final" {
-		if VersionReleaseNumber > 0 {
-			return fmt.Sprintf("%s.%d", VersionReleaseLevel, VersionReleaseNumber)
-		}
-		return VersionReleaseLevel
-	}
-	return ""
+	return version.PreRelease()
 }

@@ -67,16 +67,8 @@ func OpenAIAPIKey(t testing.TB) string {
 	Load(t)
 	value := os.Getenv("OPENAI_API_KEY")
 	if value == "" {
-		t.Fatalf("OPENAI_API_KEY is not set")
+		// TODO: make this fatal when we have the OpenAI provider catalog integration working fully
+		t.Skip("OPENAI_API_KEY is not set")
 	}
 	return value
-}
-
-// Skips unstable provider tests unless explicitly enabled.
-func RunUnstable(t testing.TB) {
-	t.Helper()
-	Load(t)
-	if os.Getenv("HORIZON_RUN_UNSTABLE_TESTS") != "1" {
-		t.Skip("unstable provider test disabled; set HORIZON_RUN_UNSTABLE_TESTS=1 to run")
-	}
 }

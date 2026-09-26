@@ -10,24 +10,24 @@ import (
 
 	oai "github.com/openai/openai-go/v3"
 	"github.com/openai/openai-go/v3/option"
-	"go.rtnl.ai/endeavor/pkg"
-	"go.rtnl.ai/endeavor/pkg/horizon/client/auth"
-	"go.rtnl.ai/endeavor/pkg/horizon/client/config"
-	"go.rtnl.ai/endeavor/pkg/http"
+	"go.rtnl.ai/horizon/http"
+	"go.rtnl.ai/horizon/provider"
+	"go.rtnl.ai/horizon/provider/auth"
+	"go.rtnl.ai/horizon/version"
 )
 
 // Default options for the OpenAI client.
 var defaultOptions = []option.RequestOption{
-	option.WithHTTPClient(http.DefaultClient),                                      // Use the default endeavor http client from the http package.
-	option.WithHeader("User-Agent", fmt.Sprintf("Endeavor/%s", pkg.Version(true))), // Set the User-Agent header to the Endeavor version
-	option.WithEnvironmentProduction(),                                             // Use the production environment by default
-	option.WithMaxRetries(0),                                                       // Endeavor handles retries internally
-	option.WithRequestTimeout(config.DefaultTimeout),                               // Set the default request timeout
+	option.WithHTTPClient(http.DefaultClient),                                        // Use Horizon's shared HTTP client.
+	option.WithHeader("User-Agent", fmt.Sprintf("Horizon/%s", version.String(true))), // Set the User-Agent header to the Horizon version.
+	option.WithEnvironmentProduction(),                                               // Use the production environment by default.
+	option.WithMaxRetries(0),                                                         // Horizon handles retries internally.
+	option.WithRequestTimeout(provider.DefaultRequestTimeout),                        // Set the default request timeout.
 }
 
-// Creates a new OpenAI client from the Endeavor configuration.
+// Creates a new OpenAI client from the Horizon configuration.
 // TODO: allow passing in an http client to use for testing.
-func New(conf config.Provider) (*oai.Client, error) {
+func New(conf provider.Config) (*oai.Client, error) {
 	opts := make([]option.RequestOption, 0, len(defaultOptions)+5)
 	opts = append(opts, defaultOptions...)
 
@@ -59,6 +59,11 @@ func New(conf config.Provider) (*oai.Client, error) {
 				option.WithOrganization(organization),
 				option.WithProject(project),
 			)
+		case auth.TypeNone:
+			// OpenAI-compatible local providers may intentionally require no
+			// authentication. An explicit empty key also prevents an ambient
+			// OPENAI_API_KEY from being inherited by the SDK.
+			opts = append(opts, option.WithAPIKey(""))
 		default:
 			return nil, errors.New("invalid credential type")
 		}

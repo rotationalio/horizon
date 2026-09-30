@@ -20,17 +20,21 @@ const ConnectivityModel = "gpt-4o-mini"
 // CatalogClient fetches model metadata from the OpenAI models API.
 // See https://platform.openai.com/docs/api-reference/models
 type CatalogClient struct {
-	conf provider.Config
+	endpoint *http.Endpoint
 }
 
 // NewCatalog creates an OpenAI catalog client.
 func NewCatalog(conf provider.Config) (*CatalogClient, error) {
-	return &CatalogClient{conf: conf}, nil
+	endpoint, err := http.NewEndpoint(conf.CatalogEndpoint, nil, conf.Credentials)
+	if err != nil {
+		return nil, err
+	}
+	return &CatalogClient{endpoint: endpoint}, nil
 }
 
 // Returns models from the OpenAI catalog.
 func (c *CatalogClient) FetchCatalog(ctx context.Context) ([]catalog.Model, error) {
-	body, err := http.GetSuffix(ctx, c.conf.CatalogEndpoint, "", c.conf.Credentials)
+	body, err := c.endpoint.Get(ctx, "")
 	if err != nil {
 		return nil, err
 	}
@@ -45,7 +49,7 @@ func (c *CatalogClient) FetchCatalog(ctx context.Context) ([]catalog.Model, erro
 
 // Returns one model from the OpenAI catalog.
 func (c *CatalogClient) RetrieveModel(ctx context.Context, modelID string) (*catalog.Model, error) {
-	body, err := http.GetSuffix(ctx, c.conf.CatalogEndpoint, modelID, c.conf.Credentials)
+	body, err := c.endpoint.Get(ctx, modelID)
 	if err != nil {
 		return nil, err
 	}
@@ -103,14 +107,27 @@ func DecodeModelJSON(data []byte) (catalog.Model, error) {
 	if err := json.Unmarshal(data, &wire); err != nil {
 		return catalog.Model{}, err
 	}
-	return ModelFromWire(wire), nil
+	model := ModelFromWire(wire)
+	model.ProviderRaw = append(json.RawMessage(nil), data...)
+	return model, nil
 }
 
 // DecodeListJSON decodes an OpenAI list models JSON response.
 func DecodeListJSON(data []byte) ([]catalog.Model, error) {
-	var list WireList
+	var list struct {
+		Data []json.RawMessage `json:"data"`
+	}
 	if err := json.Unmarshal(data, &list); err != nil {
 		return nil, err
 	}
-	return ModelsFromList(list), nil
+
+	models := make([]catalog.Model, 0, len(list.Data))
+	for _, raw := range list.Data {
+		model, err := DecodeModelJSON(raw)
+		if err != nil {
+			return nil, err
+		}
+		models = append(models, model)
+	}
+	return models, nil
 }

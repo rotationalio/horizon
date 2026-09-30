@@ -9,6 +9,7 @@ import (
 	"go.rtnl.ai/horizon/provider"
 	"go.rtnl.ai/horizon/provider/auth"
 	"go.rtnl.ai/horizon/provider/openai"
+	"go.rtnl.ai/horizon/version"
 )
 
 // Verifies no-auth clients suppress ambient OpenAI credentials and send no
@@ -18,6 +19,7 @@ func TestNewWithoutAuthDoesNotInheritAPIKey(t *testing.T) {
 
 	server := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
 		require.Empty(t, r.Header.Values("Authorization"))
+		require.Equal(t, version.UserAgent(), r.Header.Get("User-Agent"))
 		w.Header().Set("Content-Type", "application/json")
 		_, err := w.Write([]byte(`{"object":"list","data":[]}`))
 		require.NoError(t, err)

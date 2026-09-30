@@ -1,20 +1,18 @@
 package catalog
 
 import (
+	"encoding/json"
 	"time"
 
 	"go.rtnl.ai/horizon/modality"
 	"go.rtnl.ai/horizon/provider/auth"
-	"go.rtnl.ai/tidal/fields"
 )
 
 // Model is the canonical catalog representation of a provider model. It contains
 // display metadata normalized from provider wire formats and is the shape
 // written to JSONB catalog columns in persistence adapters.
 type Model struct {
-	//FIXME: we can probably remove this, and allow the app to link a provider to it's catalog, otherwise just make
-	// it a pure string and we'll handle it on the other side
-	// ProviderType provider.ProviderType `json:"provider_type"`
+	ProviderRaw json.RawMessage `json:"provider_raw,omitempty"` // Raw JSON from the provider.
 
 	// Common display metadata.
 
@@ -44,12 +42,10 @@ type Model struct {
 	Limits       Limits          `json:"limits,omitzero"`
 
 	// TODO: figure out a common format for energy usage
-	EnergyUsage fields.NullJSONB `json:"energy_usage,omitzero"`
+	EnergyUsage json.RawMessage `json:"energy_usage,omitzero"`
 
-	// Model-specific API, endpoint, and auth overrides. Not commonly used.
+	// Model-specific overrides. Not commonly used.
 
-	//FIXME: we can probably remove this as it's more of an override for our application? or make it a pure string
-	// APIType  provider.APIType `json:"api_type,omitzero"`
 	Endpoint string    `json:"endpoint,omitempty"`
 	AuthType auth.Type `json:"auth_type,omitzero"`
 }
@@ -75,11 +71,8 @@ type ArchitectureAttribute struct {
 	Unit    string `json:"unit,omitempty"`
 }
 
-// Parameters is the list of documented controls and capabilities for a model.
-type Parameters struct {
-	Parameters   []Parameter  `json:"parameters"`
-	Capabilities []Capability `json:"capabilities"`
-}
+// Parameters is the list of documented controls for a model.
+type Parameters []Parameter
 
 // Parameter is one documented control parameter for a model, such as
 // temperature, top_p, max_tokens, etc.
@@ -87,13 +80,6 @@ type Parameter struct {
 	Tag      string `json:"tag"`
 	Display  string `json:"display"`
 	Category string `json:"category"`
-}
-
-// Capability is one documented capability for a model, such as tool use, image
-// generation, etc.
-type Capability struct {
-	Tag     string `json:"tag"`
-	Display string `json:"display"`
 }
 
 // Pricing is the list of published prices for a model.

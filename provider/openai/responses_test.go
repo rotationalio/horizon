@@ -230,7 +230,7 @@ func TestResponsesIntegration(t *testing.T) {
 			},
 		}
 
-		rep, model := generateWithOpenRouterModels(t, client, ctx, req, testenv.OpenRouterTextModels)
+		rep, model := generateWithOpenRouterModels(t, client, ctx, req, testenv.OpenRouterTextModels(t))
 		require.NotNil(t, rep)
 
 		// Check the response
@@ -297,7 +297,7 @@ func TestResponsesIntegration(t *testing.T) {
 			},
 		}
 
-		rep, _ := generateWithOpenRouterModels(t, client, ctx, req, testenv.OpenRouterTextModels)
+		rep, _ := generateWithOpenRouterModels(t, client, ctx, req, testenv.OpenRouterTextModels(t))
 		require.NotNil(t, rep)
 		require.GreaterOrEqual(t, len(rep.Output), 1)
 
@@ -350,7 +350,7 @@ func TestResponsesIntegration(t *testing.T) {
 			},
 		}
 
-		rep, _ := generateWithOpenRouterModels(t, client, ctx, req, testenv.OpenRouterMultimodalModels)
+		rep, _ := generateWithOpenRouterModels(t, client, ctx, req, testenv.OpenRouterMultimodalModels(t))
 		require.NotNil(t, rep)
 		require.GreaterOrEqual(t, len(rep.Output), 1)
 
@@ -405,7 +405,7 @@ func TestResponsesIntegration(t *testing.T) {
 			},
 		}
 
-		rep, _ := generateWithOpenRouterModels(t, client, ctx, req, testenv.OpenRouterMultimodalModels)
+		rep, _ := generateWithOpenRouterModels(t, client, ctx, req, testenv.OpenRouterMultimodalModels(t))
 		require.NotNil(t, rep)
 		require.GreaterOrEqual(t, len(rep.Output), 1)
 
@@ -460,7 +460,7 @@ func TestResponsesIntegration(t *testing.T) {
 			},
 		}
 
-		rep, _ := generateWithOpenRouterModels(t, client, ctx, req, testenv.OpenRouterMultimodalModels)
+		rep, _ := generateWithOpenRouterModels(t, client, ctx, req, testenv.OpenRouterMultimodalModels(t))
 		require.NotNil(t, rep)
 		require.GreaterOrEqual(t, len(rep.Output), 1)
 
@@ -513,7 +513,7 @@ func TestResponsesIntegration(t *testing.T) {
 			},
 		}
 
-		rep, _ := generateWithOpenRouterModels(t, client, ctx, req, testenv.OpenRouterTextModels)
+		rep, _ := generateWithOpenRouterModels(t, client, ctx, req, testenv.OpenRouterTextModels(t))
 		require.NotNil(t, rep)
 		require.GreaterOrEqual(t, len(rep.Output), 1)
 

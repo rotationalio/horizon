@@ -2,6 +2,7 @@ package testenv
 
 import (
 	"fmt"
+	"os"
 	"strings"
 	"testing"
 )
@@ -9,7 +10,7 @@ import (
 // Low-cost paid models that support text and function/tool calling. Using very
 // low-cost models is the easiest way to avoid rate limiting and unstable free
 // inference providers.
-var OpenRouterTextModels = []string{
+var defaultOpenRouterTextModels = []string{
 	"google/gemini-2.5-flash-lite",
 	"google/gemini-2.5-flash",
 	"openai/gpt-4.1-mini",
@@ -18,10 +19,39 @@ var OpenRouterTextModels = []string{
 // Low-cost paid models that support multimodal input and function/tool
 // calling. Using very low-cost models is the easiest way to avoid rate limiting
 // and unstable free inference providers.
-var OpenRouterMultimodalModels = []string{
+var defaultOpenRouterMultimodalModels = []string{
 	"google/gemini-2.5-flash-lite",
 	"google/gemini-2.5-flash",
 	"openai/gpt-4.1-mini",
+}
+
+// OpenRouterTextModels returns configured models or the default text models.
+func OpenRouterTextModels(t testing.TB) []string {
+	t.Helper()
+	return openRouterModels(t, "OPENROUTER_TEXT_MODELS", defaultOpenRouterTextModels)
+}
+
+// OpenRouterMultimodalModels returns configured models or the default multimodal models.
+func OpenRouterMultimodalModels(t testing.TB) []string {
+	t.Helper()
+	return openRouterModels(t, "OPENROUTER_MULTIMODAL_MODELS", defaultOpenRouterMultimodalModels)
+}
+
+// Returns configured models from the environment variable, or the default
+// models if none are configured.
+func openRouterModels(t testing.TB, envKey string, defaults []string) []string {
+	Load(t)
+
+	var models []string
+	for model := range strings.SplitSeq(os.Getenv(envKey), ",") {
+		if model = strings.TrimSpace(model); model != "" {
+			models = append(models, model)
+		}
+	}
+	if len(models) > 0 {
+		return models
+	}
+	return append([]string(nil), defaults...)
 }
 
 // Runs fn against models in the supplied order. Rate-limit failures are retried

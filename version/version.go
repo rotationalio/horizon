@@ -16,6 +16,11 @@ const (
 	ReleaseNumber = 1
 )
 
+// Provides the Horizon user-agent value used for outbound requests.
+func UserAgent() string {
+	return "Horizon/" + String(true)
+}
+
 // Returns the semantic version for the current build.
 func String(short bool) string {
 	vers := semver.Version{

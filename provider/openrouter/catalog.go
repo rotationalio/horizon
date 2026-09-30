@@ -29,12 +29,32 @@ const ConnectivityModel = "google/gemini-2.5-flash-lite"
 // CatalogClient fetches model metadata from the OpenRouter models API.
 // See https://openrouter.ai/docs/api/api-reference/models/get-models
 type CatalogClient struct {
-	conf provider.Config
+	conf          provider.Config
+	endpoint      *http.Endpoint
+	modelEndpoint *http.Endpoint
 }
 
 // NewCatalog creates an OpenRouter catalog client.
 func NewCatalog(conf provider.Config) (*CatalogClient, error) {
-	return &CatalogClient{conf: conf}, nil
+	listURL, err := catalogEndpointWithAllModalities(conf.CatalogEndpoint)
+	if err != nil {
+		return nil, err
+	}
+	modelURL, err := catalogModelEndpoint(conf.CatalogEndpoint)
+	if err != nil {
+		return nil, err
+	}
+
+	endpoint, err := http.NewEndpoint(listURL, nil, conf.Credentials)
+	if err != nil {
+		return nil, err
+	}
+	modelEndpoint, err := http.NewEndpoint(modelURL, nil, conf.Credentials)
+	if err != nil {
+		return nil, err
+	}
+
+	return &CatalogClient{conf: conf, endpoint: endpoint, modelEndpoint: modelEndpoint}, nil
 }
 
 // Config returns the provider configuration for this catalog client.
@@ -47,12 +67,7 @@ func (c *CatalogClient) Config() provider.Config {
 
 // Returns models from the OpenRouter catalog.
 func (c *CatalogClient) FetchCatalog(ctx context.Context) ([]catalog.Model, error) {
-	endpoint, err := catalogEndpointWithAllModalities(c.conf.CatalogEndpoint)
-	if err != nil {
-		return nil, err
-	}
-
-	body, err := http.GetSuffix(ctx, endpoint, "", c.conf.Credentials)
+	body, err := c.endpoint.Get(ctx, "")
 	if err != nil {
 		return nil, err
 	}
@@ -63,6 +78,17 @@ func (c *CatalogClient) FetchCatalog(ctx context.Context) ([]catalog.Model, erro
 	}
 
 	return models, nil
+}
+
+// Derives the model-detail route from the configured catalog models URL.
+func catalogModelEndpoint(endpoint string) (string, error) {
+	parsed, err := url.Parse(endpoint)
+	if err != nil {
+		return "", fmt.Errorf("parse catalog endpoint: %w", err)
+	}
+	parsed.Path = strings.TrimSuffix(strings.TrimRight(parsed.Path, "/"), "/models") + "/model"
+	parsed.RawPath = ""
+	return parsed.String(), nil
 }
 
 // Specify the modalities explicitly to ensure all models are returned.
@@ -82,26 +108,22 @@ func catalogEndpointWithAllModalities(endpoint string) (string, error) {
 
 // Returns one model from the OpenRouter catalog.
 func (c *CatalogClient) RetrieveModel(ctx context.Context, modelID string) (*catalog.Model, error) {
-	endpoint := strings.TrimSuffix(c.conf.CatalogEndpoint, "/")
-	endpoint = strings.TrimSuffix(endpoint, "/models") + "/model/" + strings.TrimPrefix(modelID, "/")
-
-	body, err := http.Get(ctx, endpoint, c.conf.Credentials)
+	body, err := c.modelEndpoint.Get(ctx, modelID)
 	if err != nil {
 		return nil, err
 	}
 
 	var wire struct {
-		Data WireModel `json:"data"`
+		Data json.RawMessage `json:"data"`
 	}
 	if err := json.Unmarshal(body, &wire); err != nil {
 		return nil, err
 	}
 
-	model, err := c.ModelFromWire(wire.Data)
+	model, err := c.DecodeModelJSON(wire.Data)
 	if err != nil {
 		return nil, err
 	}
-
 	return &model, nil
 }
 
@@ -216,7 +238,7 @@ func (c *CatalogClient) ModelFromWire(wire WireModel) (catalog.Model, error) {
 
 	// Include tool turns parameter if the model supports tool calling.
 	if out.Capabilities&catalog.Tools != 0 {
-		out.Parameters.Parameters = append(out.Parameters.Parameters, catalog.Parameter{
+		out.Parameters = append(out.Parameters, catalog.Parameter{
 			Tag:      params.MaxToolTurns,
 			Display:  "Max Tool Turns",
 			Category: "parameter",
@@ -245,16 +267,32 @@ func (c *CatalogClient) DecodeModelJSON(data []byte) (catalog.Model, error) {
 	if err := json.Unmarshal(data, &wire); err != nil {
 		return catalog.Model{}, err
 	}
-	return c.ModelFromWire(wire)
+	model, err := c.ModelFromWire(wire)
+	if err != nil {
+		return catalog.Model{}, err
+	}
+	model.ProviderRaw = append(json.RawMessage(nil), data...)
+	return model, nil
 }
 
 // DecodeListJSON decodes an OpenRouter list models JSON response.
 func (c *CatalogClient) DecodeListJSON(data []byte) ([]catalog.Model, error) {
-	var list WireList
+	var list struct {
+		Data []json.RawMessage `json:"data"`
+	}
 	if err := json.Unmarshal(data, &list); err != nil {
 		return nil, err
 	}
-	return c.ModelsFromList(list)
+
+	models := make([]catalog.Model, 0, len(list.Data))
+	for _, raw := range list.Data {
+		model, err := c.DecodeModelJSON(raw)
+		if err != nil {
+			return nil, err
+		}
+		models = append(models, model)
+	}
+	return models, nil
 }
 
 //=============================================================================
@@ -424,11 +462,9 @@ func architectureFromWire(wire WireArchitecture) catalog.Architecture {
 //=============================================================================
 
 func parametersFromWire(values []string) catalog.Parameters {
-	out := catalog.Parameters{
-		Parameters: make([]catalog.Parameter, 0, len(values)),
-	}
+	out := make(catalog.Parameters, 0, len(values))
 	for _, value := range values {
-		out.Parameters = append(out.Parameters, catalog.Parameter{
+		out = append(out, catalog.Parameter{
 			Tag:      value,
 			Display:  humanizeTag(value),
 			Category: "parameter",

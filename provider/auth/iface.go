@@ -1,6 +1,10 @@
 package auth
 
-import "golang.org/x/oauth2"
+import (
+	"net/http"
+
+	"golang.org/x/oauth2"
+)
 
 // Credential defines the common interface for all supported client credential
 // [Type]s.
@@ -11,6 +15,14 @@ type Credential interface {
 	// Validate checks that the credential is well-formed for its [Type] (e.g.,
 	// nonempty secrets).
 	Validate() error
+}
+
+// RequestCredential is a credential that can apply its authentication directly
+// to an HTTP request. Credential types requiring token acquisition may reject
+// direct application.
+type RequestCredential interface {
+	Credential
+	Set(req *http.Request) error
 }
 
 // None represents "no credentials required" (credentials type [TypeNone]) for

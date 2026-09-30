@@ -2,6 +2,8 @@ package auth
 
 import (
 	"encoding/json"
+	"fmt"
+	"net/http"
 	"strings"
 	"time"
 
@@ -17,6 +19,7 @@ type Credentials struct {
 }
 
 var _ Credential = (*Credentials)(nil)
+var _ RequestCredential = (*Credentials)(nil)
 
 //=============================================================================
 // Constructors
@@ -234,6 +237,71 @@ func (c *Credentials) Type() Type {
 		return TypeUnknown
 	}
 	return c.wire.Type
+}
+
+// Applies credentials directly to req, clearing auth headers which are supported
+// by this type. Supported types are TypeNone (or a nil reciever), TypeAPIKey,
+// TypeToken, TypeBasic, TypeOAuth2Token, and TypeOpenAIOrganization; nil
+// receivers also mean no authentication. TypeOAuth2Client credentials are
+// unsupported because they require a token exchange.
+func (c *Credentials) Set(req *http.Request) error {
+	if req == nil {
+		return ErrNilRequest
+	}
+	if req.Header == nil {
+		req.Header = make(http.Header)
+	}
+	req.Header.Del("Authorization")
+	req.Header.Del("OpenAI-Organization")
+	req.Header.Del("OpenAI-Project")
+
+	if c == nil {
+		return nil
+	}
+
+	switch c.Type() {
+	case TypeNone:
+		return nil
+	case TypeAPIKey:
+		apiKey, err := c.APIKey()
+		if err != nil {
+			return err
+		}
+		req.Header.Set("Authorization", "Bearer "+apiKey)
+		return nil
+	case TypeToken:
+		token, err := c.Token()
+		if err != nil {
+			return err
+		}
+		req.Header.Set("Authorization", "Bearer "+token)
+		return nil
+	case TypeBasic:
+		username, password, err := c.Basic()
+		if err != nil {
+			return err
+		}
+		req.SetBasicAuth(username, password)
+		return nil
+	case TypeOAuth2Token:
+		token, err := c.OAuth2Token()
+		if err != nil {
+			return err
+		}
+		req.Header.Set("Authorization", token.Type()+" "+token.AccessToken)
+		return nil
+	case TypeOpenAIOrganization:
+		apiKey, organization, project, err := c.OpenAIOrganization()
+		if err != nil {
+			return err
+		}
+		req.Header.Set("Authorization", "Bearer "+apiKey)
+		req.Header.Set("OpenAI-Organization", organization)
+		req.Header.Set("OpenAI-Project", project)
+		return nil
+	default:
+		return fmt.Errorf("%w: %s", ErrUnsupportedCredentialType, c.Type())
+	}
 }
 
 // Zero returns true if the normalized Credentials are empty.

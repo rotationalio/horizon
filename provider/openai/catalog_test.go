@@ -127,6 +127,7 @@ func assertExampleGPT4oModel(t *testing.T, model catalog.Model) {
 
 	require.Equal(t, expectedGPT4oSlug, model.Slug)
 	require.Equal(t, expectedGPT4oSlug, model.Name)
+	require.JSONEq(t, exampleModelJSON, string(model.ProviderRaw))
 	require.Empty(t, model.Description)
 	require.Equal(t, expectedGPT4oAuthor, model.Author)
 	require.Equal(t, expectedGPT4oPublished, model.Published)
@@ -144,11 +145,11 @@ func assertExampleGPT4oModel(t *testing.T, model catalog.Model) {
 	require.Nil(t, model.IsModerated)
 	require.Empty(t, model.Links)
 	require.Empty(t, model.Architecture)
-	require.Empty(t, model.Parameters.Parameters)
-	require.Empty(t, model.Parameters.Capabilities)
+	require.Empty(t, model.Parameters)
+
 	require.Empty(t, model.Pricing)
 	require.Empty(t, model.Limits)
-	require.False(t, model.EnergyUsage.Valid)
+	require.Nil(t, model.EnergyUsage)
 	require.Empty(t, model.Endpoint)
 	require.Zero(t, model.AuthType)
 }

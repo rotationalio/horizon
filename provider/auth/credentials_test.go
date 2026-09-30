@@ -2,6 +2,7 @@ package auth_test
 
 import (
 	"encoding/json"
+	"net/http"
 	"testing"
 
 	"github.com/stretchr/testify/require"
@@ -232,4 +233,94 @@ func assertCredentialFieldsEqual(t *testing.T, want, got *auth.Credentials) {
 		require.Equal(t, wantOrg, gotOrg)
 		require.Equal(t, wantProject, gotProject)
 	}
+}
+
+// Applies supported credentials and clears auth headers for explicit no-auth.
+func TestCredentialsSetRequestHeaders(t *testing.T) {
+	tests := []struct {
+		name    string
+		cred    *auth.Credentials
+		want    map[string]string
+		wantErr error
+	}{
+		{
+			name: "API key",
+			cred: auth.NewAPIKey("secret"),
+			want: map[string]string{"Authorization": "Bearer secret"},
+		},
+		{
+			name: "bearer token",
+			cred: auth.NewToken("token"),
+			want: map[string]string{"Authorization": "Bearer token"},
+		},
+		{
+			name: "basic auth",
+			cred: auth.NewBasic("user", "pass"),
+			want: map[string]string{"Authorization": "Basic dXNlcjpwYXNz"},
+		},
+		{
+			name: "OAuth2 access token",
+			cred: auth.NewOAuth2Token(&oauth2.Token{AccessToken: "access", TokenType: "MAC"}),
+			want: map[string]string{"Authorization": "MAC access"},
+		},
+		{
+			name: "OpenAI organization",
+			cred: auth.NewOpenAIOrganization("secret", "org", "project"),
+			want: map[string]string{
+				"Authorization":       "Bearer secret",
+				"OpenAI-Organization": "org",
+				"OpenAI-Project":      "project",
+			},
+		},
+		{
+			name: "none clears auth headers",
+			cred: auth.NewNone(),
+			want: map[string]string{},
+		},
+		{
+			name:    "OAuth client credentials are not applied directly",
+			cred:    auth.NewOAuth2Client("client", "secret"),
+			wantErr: auth.ErrUnsupportedCredentialType,
+		},
+		{
+			name:    "Unknown credentials type fails",
+			cred:    &auth.Credentials{},
+			wantErr: auth.ErrUnsupportedCredentialType,
+		},
+	}
+
+	for _, tt := range tests {
+		t.Run(tt.name, func(t *testing.T) {
+			req, err := http.NewRequest(http.MethodGet, "https://example.com", nil)
+			require.NoError(t, err)
+			req.Header.Set("Authorization", "stale")
+			req.Header.Set("OpenAI-Organization", "stale")
+			req.Header.Set("OpenAI-Project", "stale")
+
+			err = tt.cred.Set(req)
+			if tt.wantErr != nil {
+				require.ErrorIs(t, err, tt.wantErr)
+				return
+			}
+			require.NoError(t, err)
+			for _, header := range []string{"Authorization", "OpenAI-Organization", "OpenAI-Project"} {
+				require.Equal(t, tt.want[header], req.Header.Get(header))
+			}
+		})
+	}
+}
+
+// Handles a nil credential receiver as anonymous and rejects a nil request.
+func TestCredentialsSetNilRequestAndReceiver(t *testing.T) {
+	var nilCredentials *auth.Credentials
+	req := &http.Request{Header: http.Header{
+		"Authorization":       []string{"stale"},
+		"OpenAI-Organization": []string{"stale"},
+		"OpenAI-Project":      []string{"stale"},
+	}}
+	require.NoError(t, nilCredentials.Set(req))
+	require.Empty(t, req.Header.Get("Authorization"))
+	require.Empty(t, req.Header.Get("OpenAI-Organization"))
+	require.Empty(t, req.Header.Get("OpenAI-Project"))
+	require.ErrorIs(t, auth.NewNone().Set(nil), auth.ErrNilRequest)
 }

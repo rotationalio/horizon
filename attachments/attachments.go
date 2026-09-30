@@ -4,21 +4,12 @@ import (
 	"context"
 	"encoding/base64"
 	"fmt"
-	"io"
-	stdhttp "net/http"
-	"time"
+	"strings"
 
+	"go.rtnl.ai/horizon/config"
 	"go.rtnl.ai/horizon/http"
 	"go.rtnl.ai/ulid"
 	"go.rtnl.ai/x/mime"
-)
-
-const (
-	// Avoids unbounded memory use while preparing provider requests.
-	MaximumDownloadSize int64 = 64 << 20
-
-	// Maximum duration of a remote attachment request.
-	DownloadTimeout = 16 * time.Second
 )
 
 type Attachments []*Attachment
@@ -37,7 +28,7 @@ func (a *Attachment) Bytes() ([]byte, error) {
 }
 
 // Returns the attachment data, downloading it with ctx when only a URL is
-// provided. Remote bodies larger than [MaximumDownloadSize] are rejected.
+// provided. Remote bodies larger than the configured attachment limit are rejected.
 func (a *Attachment) BytesContext(ctx context.Context) ([]byte, error) {
 	if a == nil {
 		return nil, fmt.Errorf("attachment is nil")
@@ -49,33 +40,20 @@ func (a *Attachment) BytesContext(ctx context.Context) ([]byte, error) {
 		return nil, fmt.Errorf("attachment %q has no data or URL", a.Filename)
 	}
 
-	ctx, cancel := context.WithTimeout(ctx, DownloadTimeout)
+	conf, err := config.Get()
+	if err != nil {
+		return nil, fmt.Errorf("load attachment download configuration: %w", err)
+	}
+
+	ctx, cancel := context.WithTimeout(ctx, conf.AttachmentDownloadTimeout)
 	defer cancel()
 
-	// TODO: Once the shared HTTP client supports middleware, reject loopback,
-	// private, link-local, and other non-public destinations after DNS
-	// resolution, and re-check every redirect to prevent SSRF.
-	req, err := http.NewRequestWithContext(ctx, stdhttp.MethodGet, a.URL, nil)
+	data, err := http.Get(ctx, a.URL, nil, http.GetOptions{
+		Accept:       "*/*",
+		MaxBodyBytes: conf.AttachmentMaxDownloadBytes,
+	})
 	if err != nil {
-		return nil, err
-	}
-
-	resp, err := http.DefaultClient.Do(req)
-	if err != nil {
-		return nil, err
-	}
-	defer resp.Body.Close()
-
-	if resp.StatusCode < stdhttp.StatusOK || resp.StatusCode >= stdhttp.StatusMultipleChoices {
-		return nil, fmt.Errorf("fetch attachment %q: %s", a.Filename, resp.Status)
-	}
-
-	data, err := io.ReadAll(io.LimitReader(resp.Body, MaximumDownloadSize+1))
-	if err != nil {
-		return nil, err
-	}
-	if int64(len(data)) > MaximumDownloadSize {
-		return nil, fmt.Errorf("attachment %q exceeds maximum download size of %d bytes", a.Filename, MaximumDownloadSize)
+		return nil, fmt.Errorf("fetch attachment %q: %w", a.Filename, err)
 	}
 	return data, nil
 }
@@ -105,9 +83,34 @@ func (a *Attachment) Base64URIContext(ctx context.Context) (string, error) {
 	if err != nil {
 		return "", err
 	}
-	contentType, err := mime.Parse(a.ContentType)
+	contentType, err := a.contentType(data)
 	if err != nil {
-		return "", fmt.Errorf("attachment %q has invalid content type %q: %w", a.Filename, a.ContentType, err)
+		return "", err
 	}
-	return "data:" + contentType.Type.String() + ";base64," + base64.StdEncoding.EncodeToString(data), nil
+	return "data:" + contentType + ";base64," + base64.StdEncoding.EncodeToString(data), nil
+}
+
+// Resolves the explicit content type or infers one from the filename or bytes.
+func (a *Attachment) contentType(data []byte) (string, error) {
+	if strings.TrimSpace(a.ContentType) != "" {
+		contentType, err := mime.Parse(a.ContentType)
+		if err != nil {
+			return "", fmt.Errorf("attachment %q has invalid content type %q: %w", a.Filename, a.ContentType, err)
+		}
+		return contentType.Type.String(), nil
+	}
+
+	inferred := mime.TypeByExtension(a.Filename)
+	if inferred == mime.UnknownMimeType {
+		inferred = mime.DetectType(data)
+		if inferred == mime.UnknownMimeType || inferred == "application/octet-stream" {
+			return "", fmt.Errorf("attachment %q has no content type and its type could not be inferred", a.Filename)
+		}
+	}
+
+	contentType, err := mime.Parse(string(inferred))
+	if err != nil {
+		return "", fmt.Errorf("infer content type for attachment %q: %w", a.Filename, err)
+	}
+	return contentType.Type.String(), nil
 }

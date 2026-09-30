@@ -46,7 +46,7 @@ func TestChatIntegration(t *testing.T) {
 			},
 		}
 
-		rep, model := generateWithOpenRouterModels(t, client, ctx, req, testenv.OpenRouterTextModels)
+		rep, model := generateWithOpenRouterModels(t, client, ctx, req, testenv.OpenRouterTextModels(t))
 		require.NotNil(t, rep)
 
 		// Check the response
@@ -114,7 +114,7 @@ func TestChatIntegration(t *testing.T) {
 			},
 		}
 
-		rep, _ := generateWithOpenRouterModels(t, client, ctx, req, testenv.OpenRouterTextModels)
+		rep, _ := generateWithOpenRouterModels(t, client, ctx, req, testenv.OpenRouterTextModels(t))
 		require.NotNil(t, rep)
 
 		require.Len(t, rep.Output, 1)
@@ -168,7 +168,7 @@ func TestChatIntegration(t *testing.T) {
 			},
 		}
 
-		rep, _ := generateWithOpenRouterModels(t, client, ctx, req, testenv.OpenRouterMultimodalModels)
+		rep, _ := generateWithOpenRouterModels(t, client, ctx, req, testenv.OpenRouterMultimodalModels(t))
 		require.NotNil(t, rep)
 
 		require.Len(t, rep.Output, 1)
@@ -224,7 +224,7 @@ func TestChatIntegration(t *testing.T) {
 			},
 		}
 
-		rep, _ := generateWithOpenRouterModels(t, client, ctx, req, testenv.OpenRouterMultimodalModels)
+		rep, _ := generateWithOpenRouterModels(t, client, ctx, req, testenv.OpenRouterMultimodalModels(t))
 		require.NotNil(t, rep)
 
 		require.Len(t, rep.Output, 1)
@@ -280,7 +280,7 @@ func TestChatIntegration(t *testing.T) {
 			},
 		}
 
-		rep, _ := generateWithOpenRouterModels(t, client, ctx, req, testenv.OpenRouterMultimodalModels)
+		rep, _ := generateWithOpenRouterModels(t, client, ctx, req, testenv.OpenRouterMultimodalModels(t))
 		require.NotNil(t, rep)
 
 		require.Len(t, rep.Output, 1)
@@ -334,7 +334,7 @@ func TestChatIntegration(t *testing.T) {
 			},
 		}
 
-		rep, _ := generateWithOpenRouterModels(t, client, ctx, req, testenv.OpenRouterTextModels)
+		rep, _ := generateWithOpenRouterModels(t, client, ctx, req, testenv.OpenRouterTextModels(t))
 		require.NotNil(t, rep)
 
 		require.Len(t, rep.Output, 1)

@@ -40,6 +40,9 @@ jobs:
       GOPATH: ${{ github.workspace }}/go
       GOBIN: ${{ github.workspace }}/go/bin
       GOTEST_GITHUB_ACTIONS: 1
+      OPENROUTER_API_KEY: ${{ secrets.OPENROUTER_API_KEY }}
+      OPENROUTER_TEXT_MODELS: google/gemini-2.5-flash-lite,google/gemini-2.5-flash,openai/gpt-4.1-mini
+      OPENROUTER_MULTIMODAL_MODELS: google/gemini-2.5-flash-lite,google/gemini-2.5-flash,openai/gpt-4.1-mini
     defaults:
       run:
         working-directory: ${{ env.GOPATH }}/src/go.rtnl.ai/horizon

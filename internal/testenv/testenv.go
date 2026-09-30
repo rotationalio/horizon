@@ -30,7 +30,7 @@ func Load(t testing.TB) {
 		return
 	}
 
-	for _, key := range []string{"OPENAI_API_KEY", "OPENROUTER_API_KEY", "OPENROUTER_ENDPOINT_URL"} {
+	for _, key := range []string{"OPENAI_API_KEY", "OPENROUTER_API_KEY", "OPENROUTER_ENDPOINT_URL", "OPENROUTER_TEXT_MODELS", "OPENROUTER_MULTIMODAL_MODELS"} {
 		if _, exists := os.LookupEnv(key); exists {
 			continue
 		}
@@ -46,6 +46,8 @@ func OpenRouterAPIKey(t testing.TB) string {
 	Load(t)
 	value := os.Getenv("OPENROUTER_API_KEY")
 	if value == "" {
+		// This is fatal on purpose, to ensure that integration testing is
+		// performed.
 		t.Fatalf("OPENROUTER_API_KEY is not set")
 	}
 	return value

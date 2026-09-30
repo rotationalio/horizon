@@ -26,7 +26,7 @@ type Config struct {
 	// as connectivity checks and catalog refreshing.
 	DefaultModel string `json:"default_model" yaml:"default_model" msg:"default_model"`
 	// The credentials to use when connecting to this provider.
-	Credentials auth.Credential `json:"credentials,omitempty" yaml:"credentials,omitempty" msg:"credentials,omitempty"`
+	Credentials auth.RequestCredential `json:"credentials,omitempty" yaml:"credentials,omitempty" msg:"credentials,omitempty"`
 
 	inference *url.URL
 	catalog   *url.URL

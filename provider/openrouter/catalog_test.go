@@ -211,6 +211,7 @@ func assertExampleGPT4Model(t *testing.T, model catalog.Model, catalogOrigin ...
 
 	require.Equal(t, "openai/gpt-4", model.Slug)
 	require.Equal(t, "OpenAI: GPT-4", model.Name)
+	require.JSONEq(t, exampleModelJSON, string(model.ProviderRaw))
 	require.Equal(t, expectedGPT4Desc, model.Description)
 	require.Equal(t, "openai", model.Author)
 	require.Equal(t, time.Unix(1685232000, 0), model.Published)
@@ -218,6 +219,7 @@ func assertExampleGPT4Model(t *testing.T, model catalog.Model, catalogOrigin ...
 	require.Equal(t, modality.Text|modality.Image|modality.Document, model.InputModality)
 	require.Equal(t, modality.Text, model.OutputModality)
 	require.Empty(t, model.Size)
+	require.True(t, model.Capabilities.IsTools())
 
 	require.NotNil(t, model.ContextSize)
 	require.Equal(t, int32(8191), *model.ContextSize)
@@ -249,12 +251,11 @@ func assertExampleGPT4Model(t *testing.T, model catalog.Model, catalogOrigin ...
 		Value:   "text+image->text",
 	}, model.Architecture[2])
 
-	require.Empty(t, model.Parameters.Capabilities)
-	require.Len(t, model.Parameters.Parameters, len(expectedGPT4Params))
+	require.Len(t, model.Parameters, len(expectedGPT4Params))
 	for i, tag := range expectedGPT4Params {
-		require.Equal(t, tag, model.Parameters.Parameters[i].Tag)
-		require.Equal(t, "parameter", model.Parameters.Parameters[i].Category)
-		require.NotEmpty(t, model.Parameters.Parameters[i].Display)
+		require.Equal(t, tag, model.Parameters[i].Tag)
+		require.Equal(t, "parameter", model.Parameters[i].Category)
+		require.NotEmpty(t, model.Parameters[i].Display)
 	}
 
 	require.Len(t, model.Pricing, 6)
@@ -317,7 +318,7 @@ func assertExampleGPT4Model(t *testing.T, model catalog.Model, catalogOrigin ...
 		URL:     "https://huggingface.co/openai/gpt-4",
 	}, model.Links[1])
 
-	require.False(t, model.EnergyUsage.Valid)
+	require.Nil(t, model.EnergyUsage)
 	require.Empty(t, model.Endpoint)
 	require.Zero(t, model.AuthType)
 }

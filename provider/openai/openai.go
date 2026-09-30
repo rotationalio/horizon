@@ -6,7 +6,6 @@ package openai
 
 import (
 	"errors"
-	"fmt"
 
 	oai "github.com/openai/openai-go/v3"
 	"github.com/openai/openai-go/v3/option"
@@ -18,11 +17,11 @@ import (
 
 // Default options for the OpenAI client.
 var defaultOptions = []option.RequestOption{
-	option.WithHTTPClient(http.DefaultClient),                                        // Use Horizon's shared HTTP client.
-	option.WithHeader("User-Agent", fmt.Sprintf("Horizon/%s", version.String(true))), // Set the User-Agent header to the Horizon version.
-	option.WithEnvironmentProduction(),                                               // Use the production environment by default.
-	option.WithMaxRetries(0),                                                         // Horizon handles retries internally.
-	option.WithRequestTimeout(provider.DefaultRequestTimeout),                        // Set the default request timeout.
+	option.WithHTTPClient(http.DefaultClient),                 // Use Horizon's shared HTTP client.
+	option.WithHeader("User-Agent", version.UserAgent()),      // Set the User-Agent header to the Horizon version.
+	option.WithEnvironmentProduction(),                        // Use the production environment by default.
+	option.WithMaxRetries(0),                                  // Horizon handles retries internally.
+	option.WithRequestTimeout(provider.DefaultRequestTimeout), // Set the default request timeout.
 }
 
 // Creates a new OpenAI client from the Horizon configuration.

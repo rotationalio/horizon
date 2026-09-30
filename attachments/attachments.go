@@ -30,9 +30,6 @@ func (a *Attachment) Bytes() ([]byte, error) {
 // Returns the attachment data, downloading it with ctx when only a URL is
 // provided. Remote bodies larger than the configured attachment limit are rejected.
 func (a *Attachment) BytesContext(ctx context.Context) ([]byte, error) {
-	if a == nil {
-		return nil, fmt.Errorf("attachment is nil")
-	}
 	if len(a.Data) > 0 {
 		return a.Data, nil
 	}

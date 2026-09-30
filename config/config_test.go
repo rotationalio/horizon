@@ -3,6 +3,7 @@ package config_test
 import (
 	"os"
 	"testing"
+	"time"
 
 	"github.com/stretchr/testify/require"
 	"go.rtnl.ai/horizon/config"
@@ -36,5 +37,56 @@ func TestMaxToolTurnsConfiguration(t *testing.T) {
 
 		require.NoError(t, err)
 		require.Zero(t, conf.MaxToolTurns)
+	})
+}
+
+// Uses documented defaults when unset and parses explicit byte and duration overrides.
+func TestAttachmentDownloadConfigDefaultsAndOverrides(t *testing.T) {
+	clearEnv(t, "HORIZON_ATTACHMENT_MAX_DOWNLOAD_BYTES")
+	clearEnv(t, "HORIZON_ATTACHMENT_DOWNLOAD_TIMEOUT")
+
+	conf, err := config.New()
+	require.NoError(t, err)
+	require.Equal(t, config.DefaultAttachmentMaxDownloadBytes, conf.AttachmentMaxDownloadBytes)
+	require.Equal(t, config.DefaultAttachmentDownloadTimeout, conf.AttachmentDownloadTimeout)
+
+	t.Setenv("HORIZON_ATTACHMENT_MAX_DOWNLOAD_BYTES", "1048576")
+	t.Setenv("HORIZON_ATTACHMENT_DOWNLOAD_TIMEOUT", "500ms")
+	conf, err = config.New()
+	require.NoError(t, err)
+	require.EqualValues(t, 1048576, conf.AttachmentMaxDownloadBytes)
+	require.Equal(t, 500*time.Millisecond, conf.AttachmentDownloadTimeout)
+}
+
+// Rejects non-positive attachment download limits and timeouts.
+func TestAttachmentDownloadConfigRejectsInvalidValues(t *testing.T) {
+	for _, tc := range []struct {
+		key   string
+		value string
+	}{
+		{key: "HORIZON_ATTACHMENT_MAX_DOWNLOAD_BYTES", value: "0"},
+		{key: "HORIZON_ATTACHMENT_MAX_DOWNLOAD_BYTES", value: "-1"},
+		{key: "HORIZON_ATTACHMENT_DOWNLOAD_TIMEOUT", value: "0s"},
+		{key: "HORIZON_ATTACHMENT_DOWNLOAD_TIMEOUT", value: "-1s"},
+	} {
+		t.Run(tc.key+"="+tc.value, func(t *testing.T) {
+			t.Setenv(tc.key, tc.value)
+			_, err := config.New()
+			require.Error(t, err)
+		})
+	}
+}
+
+// Temporarily clears an environment variable and restores its prior state.
+func clearEnv(t *testing.T, key string) {
+	t.Helper()
+	original, wasSet := os.LookupEnv(key)
+	require.NoError(t, os.Unsetenv(key))
+	t.Cleanup(func() {
+		if wasSet {
+			_ = os.Setenv(key, original)
+		} else {
+			_ = os.Unsetenv(key)
+		}
 	})
 }

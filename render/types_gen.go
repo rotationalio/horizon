@@ -5,7 +5,6 @@ import (
 	"database/sql/driver"
 	"encoding/json"
 	"fmt"
-
 	"go.rtnl.ai/enumify"
 )
 

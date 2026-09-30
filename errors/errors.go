@@ -7,12 +7,11 @@ import (
 
 var (
 	// Catalog-related errors
-	ErrCatalogConnectivity     = errors.New("catalog connectivity check failed")
-	ErrCatalogEndpointRequired = errors.New("catalog endpoint is required")
-	ErrCatalogRequired         = errors.New("catalog client is required")
-	ErrInvalidCatalogEndpoint  = errors.New("invalid catalog endpoint")
-	ErrModelSlugRequired       = errors.New("catalog model has no slug")
-	ErrNoCatalogModels         = errors.New("catalog returned no models")
+	ErrCatalogConnectivity    = errors.New("catalog connectivity check failed")
+	ErrCatalogRequired        = errors.New("catalog client is required")
+	ErrInvalidCatalogEndpoint = errors.New("invalid catalog endpoint")
+	ErrModelSlugRequired      = errors.New("catalog model has no slug")
+	ErrNoCatalogModels        = errors.New("catalog returned no models")
 
 	// Inference-related errors
 	ErrInferenceConnectivity    = errors.New("inference connectivity check failed")
@@ -28,6 +27,7 @@ var (
 	ErrMaxToolTurns               = errors.New("maximum tool turns exceeded")
 
 	// HTTP-related errors
+	ErrBaseEndpointRequired      = errors.New("base endpoint is required")
 	ErrRequestFailed             = errors.New("HTTP request failed")
 	ErrUnsupportedCredentialType = errors.New("unsupported credential type for HTTP requests")
 

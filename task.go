@@ -40,7 +40,7 @@ type Task struct {
 
 	// Task Execution Configuration
 	// Tools *config.Tools
-	// Provider     *config.Provider  `json:"provider,omitempty" yaml:"provider,omitempty" msg:"provider,omitempty"`             // The inference provider used for the task
+	Provider *provider.Config `json:"provider,omitempty" yaml:"provider,omitempty" msg:"provider,omitempty"` // The inference provider used for the task
 }
 
 // Defines the input for a task including the modalities, context type, and any

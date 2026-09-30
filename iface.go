@@ -70,3 +70,5 @@ type InputGuard interface {
 type OutputGuard interface {
 	ProtectOutput(*provider.Response) error
 }
+
+type ProviderConfig = provider.Config

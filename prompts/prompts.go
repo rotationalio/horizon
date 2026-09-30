@@ -19,15 +19,37 @@ type Prompts []*Prompt
 // A prompt is generally rendered from a [Template] and is a single message sent to the
 // LLM as part of a request to cause it to perform a generation.
 type Prompt struct {
-	Index   uint   `json:"index"`   // The index of the prompt in the list of prompts
-	Role    Role   `json:"role"`    // The role of the message sender.
-	Content string `json:"content"` // The rendered content of the message.
-	Status  string `json:"status"`  // Any of "in_progress", "completed", "incomplete".
-	Phase   string `json:"phase"`   // Any of "commentary", "final_answer".
-	Type    string `json:"type"`    // Should be "message".
-	// ToolCalls   []capabilities.ToolCall   `json:"tool_calls,omitzero"`   // Assistant tool calls associated with the message.
-	// ToolResults []capabilities.ToolResult `json:"tool_results,omitzero"` // Results associated with prior tool calls.
+	ID        string         `json:"id,omitempty"`
+	Index     uint           `json:"index"`   // The index of the prompt in the list of prompts
+	Role      Role           `json:"role"`    // The role of the message sender.
+	Content   string         `json:"content"` // The rendered content of the message.
+	Status    string         `json:"status"`  // Any of "in_progress", "completed", "incomplete".
+	Phase     string         `json:"phase"`   // Any of "commentary", "final_answer".
+	Type      Type           `json:"type"`    // The normalized prompt content type.
+	Citations []Citation     `json:"citations,omitempty"`
+	Meta      map[string]any `json:"meta,omitempty"`
+	// TODO: ToolCalls   []capabilities.ToolCall   `json:"tool_calls,omitzero"`   // Assistant tool calls associated with the message.
+	// TODO: ToolResults []capabilities.ToolResult `json:"tool_results,omitzero"` // Results associated with prior tool calls.
 }
+
+type Citation struct {
+	StartIndex int64
+	EndIndex   int64
+	Title      string
+	URL        string
+}
+
+// Identifies the kind of content represented by a prompt.
+type Type string
+
+// Standard prompt content types used by providers when normalizing responses.
+const (
+	TypeUnknown       Type = "unknown"
+	TypeMessage       Type = "message"
+	TypeToolCall      Type = "tool_call"
+	TypeRefusal       Type = "refusal"
+	TypeContentFilter Type = "content_filter"
+)
 
 // Returns true if the templates are sorted by index, otherwise returns false.
 func (t Templates) IsSorted() bool {

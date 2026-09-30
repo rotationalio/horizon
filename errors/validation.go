@@ -9,7 +9,7 @@ import (
 
 // Asserts err is a ValidationErrors value containing exactly the specified
 // field keys.
-// TODO: these could be moved to the go.rtnl.ai/x/validation package?
+// TODO: remove and replace calls to this with go.rtnl.ai/x/validation helpers once they are merged in
 func RequireValidationFields(t *testing.T, err error, fields ...string) {
 	t.Helper()
 
@@ -26,7 +26,7 @@ func RequireValidationFields(t *testing.T, err error, fields ...string) {
 
 // Asserts err is a ValidationErrors value containing exactly the specified
 // field keys.
-// TODO: these could be moved to the go.rtnl.ai/x/validation package?
+// TODO: remove and replace calls to this with go.rtnl.ai/x/validation helpers once they are merged in
 func RequireValidation(t *testing.T, err error, target *validation.FieldError, msgAndArgs ...interface{}) {
 	t.Helper()
 

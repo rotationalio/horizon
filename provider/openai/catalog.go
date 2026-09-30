@@ -107,27 +107,15 @@ func DecodeModelJSON(data []byte) (catalog.Model, error) {
 	if err := json.Unmarshal(data, &wire); err != nil {
 		return catalog.Model{}, err
 	}
-	model := ModelFromWire(wire)
-	model.ProviderRaw = append(json.RawMessage(nil), data...)
-	return model, nil
+	return ModelFromWire(wire), nil
 }
 
 // DecodeListJSON decodes an OpenAI list models JSON response.
 func DecodeListJSON(data []byte) ([]catalog.Model, error) {
-	var list struct {
-		Data []json.RawMessage `json:"data"`
-	}
+	var list WireList
 	if err := json.Unmarshal(data, &list); err != nil {
 		return nil, err
 	}
 
-	models := make([]catalog.Model, 0, len(list.Data))
-	for _, raw := range list.Data {
-		model, err := DecodeModelJSON(raw)
-		if err != nil {
-			return nil, err
-		}
-		models = append(models, model)
-	}
-	return models, nil
+	return ModelsFromList(list), nil
 }

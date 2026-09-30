@@ -8,27 +8,69 @@ import (
 	"go.rtnl.ai/horizon/provider/catalog"
 )
 
-// Round-trips the model capabilities that Horizon recognizes.
+// Round-trips recognized flags and descriptive entries, including unknown tags.
 func TestModelCapabilitiesRoundTrip(t *testing.T) {
-	model := catalog.Model{Capabilities: catalog.Tools | catalog.Reasoning}
-	encoded, err := json.Marshal(model)
-	require.NoError(t, err)
+	tests := []struct {
+		name         string
+		capabilities catalog.Capabilities
+		want         string
+	}{
+		{name: "empty", want: `null`},
+		{
+			name:         "known flags",
+			capabilities: catalog.Capabilities{ModelCapability: catalog.Tools | catalog.Reasoning},
+			want:         `{"known":["Tools","Reasoning"]}`,
+		},
+		{
+			name:         "unknown entry only",
+			capabilities: catalog.Capabilities{Entries: []catalog.Capability{{Tag: "future", Display: "Future Capability"}}},
+			want:         `{"entries":[{"tag":"future","display":"Future Capability"}]}`,
+		},
+		{
+			name: "flags and entries",
+			capabilities: catalog.Capabilities{
+				ModelCapability: catalog.Tools,
+				Entries:         []catalog.Capability{{Tag: "tools", Display: "Tool Calling"}, {Tag: "future", Display: "Future Capability"}},
+			},
+			want: `{"known":["Tools"],"entries":[{"tag":"tools","display":"Tool Calling"},{"tag":"future","display":"Future Capability"}]}`,
+		},
+	}
 
-	var decoded catalog.Model
-	require.NoError(t, json.Unmarshal(encoded, &decoded))
-	require.Equal(t, model.Capabilities, decoded.Capabilities)
+	for _, tt := range tests {
+		t.Run(tt.name, func(t *testing.T) {
+			model := catalog.Model{Capabilities: tt.capabilities}
+			encoded, err := json.Marshal(model)
+			require.NoError(t, err)
+
+			var fields map[string]json.RawMessage
+			require.NoError(t, json.Unmarshal(encoded, &fields))
+			if tt.capabilities.IsZero() {
+				require.NotContains(t, fields, "capabilities")
+			} else {
+				require.JSONEq(t, tt.want, string(fields["capabilities"]))
+			}
+			var decoded catalog.Model
+			require.NoError(t, json.Unmarshal(encoded, &decoded))
+			require.Equal(t, model.Capabilities, decoded.Capabilities)
+			require.Equal(t, tt.capabilities.ModelCapability.IsTools(), decoded.Capabilities.IsTools())
+		})
+	}
 }
 
-// Keeps the original provider object available alongside normalized fields.
-func TestModelProviderRawRoundTrip(t *testing.T) {
-	providerRaw := json.RawMessage(`{"id":"provider/model","future_field":{"keep":"me"}}`)
-	model := catalog.Model{ProviderRaw: providerRaw}
-	encoded, err := json.Marshal(model)
-	require.NoError(t, err)
-
-	var decoded catalog.Model
-	require.NoError(t, json.Unmarshal(encoded, &decoded))
-	require.JSONEq(t, string(providerRaw), string(decoded.ProviderRaw))
+// Resets capabilities for JSON null and leaves existing values intact on errors.
+func TestModelCapabilitiesUnmarshal(t *testing.T) {
+	original := catalog.Capabilities{
+		ModelCapability: catalog.Tools,
+		Entries:         []catalog.Capability{{Tag: "tools", Display: "Tools"}},
+	}
+	for _, input := range []string{`{"known":["invalid"]}`, `{"entries":42}`, `[]`} {
+		value := original
+		require.Error(t, json.Unmarshal([]byte(input), &value))
+		require.Equal(t, original, value)
+	}
+	value := original
+	require.NoError(t, json.Unmarshal([]byte(`null`), &value))
+	require.True(t, value.IsZero())
 }
 
 // Preserves absent, null, object, and array energy values without interpretation.

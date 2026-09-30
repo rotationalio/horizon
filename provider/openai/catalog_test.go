@@ -127,7 +127,7 @@ func assertExampleGPT4oModel(t *testing.T, model catalog.Model) {
 
 	require.Equal(t, expectedGPT4oSlug, model.Slug)
 	require.Equal(t, expectedGPT4oSlug, model.Name)
-	require.JSONEq(t, exampleModelJSON, string(model.ProviderRaw))
+
 	require.Empty(t, model.Description)
 	require.Equal(t, expectedGPT4oAuthor, model.Author)
 	require.Equal(t, expectedGPT4oPublished, model.Published)

@@ -237,7 +237,7 @@ func (c *CatalogClient) ModelFromWire(wire WireModel) (catalog.Model, error) {
 	}
 
 	// Include tool turns parameter if the model supports tool calling.
-	if out.Capabilities&catalog.Tools != 0 {
+	if out.Capabilities.IsTools() {
 		out.Parameters = append(out.Parameters, catalog.Parameter{
 			Tag:      params.MaxToolTurns,
 			Display:  "Max Tool Turns",
@@ -267,32 +267,17 @@ func (c *CatalogClient) DecodeModelJSON(data []byte) (catalog.Model, error) {
 	if err := json.Unmarshal(data, &wire); err != nil {
 		return catalog.Model{}, err
 	}
-	model, err := c.ModelFromWire(wire)
-	if err != nil {
-		return catalog.Model{}, err
-	}
-	model.ProviderRaw = append(json.RawMessage(nil), data...)
-	return model, nil
+	return c.ModelFromWire(wire)
 }
 
 // DecodeListJSON decodes an OpenRouter list models JSON response.
 func (c *CatalogClient) DecodeListJSON(data []byte) ([]catalog.Model, error) {
-	var list struct {
-		Data []json.RawMessage `json:"data"`
-	}
+	var list WireList
 	if err := json.Unmarshal(data, &list); err != nil {
 		return nil, err
 	}
 
-	models := make([]catalog.Model, 0, len(list.Data))
-	for _, raw := range list.Data {
-		model, err := c.DecodeModelJSON(raw)
-		if err != nil {
-			return nil, err
-		}
-		models = append(models, model)
-	}
-	return models, nil
+	return c.ModelsFromList(list)
 }
 
 //=============================================================================
@@ -386,11 +371,17 @@ func parseWireModality(value string) (modality.Modality, bool) {
 // Capabilities conversion
 //=============================================================================
 
-func wireCapabilities(values []string) catalog.ModelCapability {
-	var out catalog.ModelCapability
+// Converts supported capability parameters into flags and descriptive entries.
+// Other supported parameters remain available in the model's Parameters field.
+func wireCapabilities(values []string) catalog.Capabilities {
+	var out catalog.Capabilities
 	for _, value := range values {
-		if c, ok := parseWireCapability(value); ok {
-			out |= c
+		if c, ok := parseWireCapability(value); ok && c != 0 {
+			out.ModelCapability |= c
+			out.Entries = append(out.Entries, catalog.Capability{
+				Tag:     value,
+				Display: c.String(),
+			})
 		}
 	}
 	return out

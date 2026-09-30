@@ -12,7 +12,6 @@ import (
 // display metadata normalized from provider wire formats and is the shape
 // written to JSONB catalog columns in persistence adapters.
 type Model struct {
-	ProviderRaw json.RawMessage `json:"provider_raw,omitempty"` // Raw JSON from the provider.
 
 	// Common display metadata.
 
@@ -34,12 +33,12 @@ type Model struct {
 
 	// Model-specific links and metadata.
 
-	Links        Links           `json:"links,omitzero"`
-	Architecture Architecture    `json:"architecture,omitzero"`
-	Parameters   Parameters      `json:"parameters,omitzero"`
-	Capabilities ModelCapability `json:"capabilities,omitzero"`
-	Pricing      Pricing         `json:"pricing,omitzero"`
-	Limits       Limits          `json:"limits,omitzero"`
+	Links        Links        `json:"links,omitzero"`
+	Architecture Architecture `json:"architecture,omitzero"`
+	Parameters   Parameters   `json:"parameters,omitzero"`
+	Capabilities Capabilities `json:"capabilities,omitzero"`
+	Pricing      Pricing      `json:"pricing,omitzero"`
+	Limits       Limits       `json:"limits,omitzero"`
 
 	// TODO: figure out a common format for energy usage
 	EnergyUsage json.RawMessage `json:"energy_usage,omitzero"`
@@ -80,6 +79,12 @@ type Parameter struct {
 	Tag      string `json:"tag"`
 	Display  string `json:"display"`
 	Category string `json:"category"`
+}
+
+// Describes a capability published by a provider.
+type Capability struct {
+	Tag     string `json:"tag"`
+	Display string `json:"display"`
 }
 
 // Pricing is the list of published prices for a model.

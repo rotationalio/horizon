@@ -9,6 +9,39 @@ import (
 	"strings"
 )
 
+// Contains recognized flags and descriptive provider capabilities.
+type Capabilities struct {
+	ModelCapability `json:"known,omitzero"`
+	Entries         []Capability `json:"entries,omitempty"`
+}
+
+type capabilitiesJSON struct {
+	Known   ModelCapability `json:"known,omitzero"`
+	Entries []Capability    `json:"entries,omitempty"`
+}
+
+// Reports whether both the recognized flags and descriptive entries are empty.
+func (c Capabilities) IsZero() bool {
+	return c.ModelCapability == 0 && len(c.Entries) == 0
+}
+
+// Encodes both recognized flags and descriptive entries instead of using
+// the embedded bitmask's JSON methods.
+func (c Capabilities) MarshalJSON() ([]byte, error) {
+	return json.Marshal(capabilitiesJSON{Known: c.ModelCapability, Entries: c.Entries})
+}
+
+// Decodes recognized flags and descriptive entries together.
+func (c *Capabilities) UnmarshalJSON(data []byte) error {
+	var wire capabilitiesJSON
+	if err := json.Unmarshal(data, &wire); err != nil {
+		return err
+	}
+	c.ModelCapability = wire.Known
+	c.Entries = wire.Entries
+	return nil
+}
+
 // Capabilities are bitmasks that specify generic model capabilities for easier
 // filtering as documented by the model provider.
 type ModelCapability uint16

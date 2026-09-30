@@ -211,7 +211,7 @@ func assertExampleGPT4Model(t *testing.T, model catalog.Model, catalogOrigin ...
 
 	require.Equal(t, "openai/gpt-4", model.Slug)
 	require.Equal(t, "OpenAI: GPT-4", model.Name)
-	require.JSONEq(t, exampleModelJSON, string(model.ProviderRaw))
+
 	require.Equal(t, expectedGPT4Desc, model.Description)
 	require.Equal(t, "openai", model.Author)
 	require.Equal(t, time.Unix(1685232000, 0), model.Published)
@@ -220,6 +220,7 @@ func assertExampleGPT4Model(t *testing.T, model catalog.Model, catalogOrigin ...
 	require.Equal(t, modality.Text, model.OutputModality)
 	require.Empty(t, model.Size)
 	require.True(t, model.Capabilities.IsTools())
+	require.Equal(t, []catalog.Capability{{Tag: "tools", Display: "Tools"}}, model.Capabilities.Entries)
 
 	require.NotNil(t, model.ContextSize)
 	require.Equal(t, int32(8191), *model.ContextSize)

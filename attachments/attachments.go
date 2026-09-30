@@ -6,11 +6,11 @@ import (
 	"fmt"
 	"io"
 	stdhttp "net/http"
-	"strings"
 	"time"
 
 	"go.rtnl.ai/horizon/http"
 	"go.rtnl.ai/ulid"
+	"go.rtnl.ai/x/mime"
 )
 
 const (
@@ -52,9 +52,9 @@ func (a *Attachment) BytesContext(ctx context.Context) ([]byte, error) {
 	ctx, cancel := context.WithTimeout(ctx, DownloadTimeout)
 	defer cancel()
 
-	// FIXME: Protect remote downloads against SSRF by rejecting loopback,
+	// TODO: Once the shared HTTP client supports middleware, reject loopback,
 	// private, link-local, and other non-public destinations after DNS
-	// resolution, and apply the same checks to every redirect.
+	// resolution, and re-check every redirect to prevent SSRF.
 	req, err := http.NewRequestWithContext(ctx, stdhttp.MethodGet, a.URL, nil)
 	if err != nil {
 		return nil, err
@@ -105,9 +105,9 @@ func (a *Attachment) Base64URIContext(ctx context.Context) (string, error) {
 	if err != nil {
 		return "", err
 	}
-	contentType := strings.TrimSpace(strings.SplitN(a.ContentType, ";", 2)[0])
-	if contentType == "" {
-		return "", fmt.Errorf("attachment %q has no content type", a.Filename)
+	contentType, err := mime.Parse(a.ContentType)
+	if err != nil {
+		return "", fmt.Errorf("attachment %q has invalid content type %q: %w", a.Filename, a.ContentType, err)
 	}
-	return "data:" + contentType + ";base64," + base64.StdEncoding.EncodeToString(data), nil
+	return "data:" + contentType.Type.String() + ";base64," + base64.StdEncoding.EncodeToString(data), nil
 }

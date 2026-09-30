@@ -15,7 +15,7 @@ import (
 func TestAttachmentData(t *testing.T) {
 	attachment := &attachments.Attachment{
 		Filename:    "note.txt",
-		ContentType: "text/plain",
+		ContentType: "text/plain; charset=utf-8",
 		Data:        []byte("hello"),
 	}
 
@@ -30,6 +30,17 @@ func TestAttachmentData(t *testing.T) {
 	uri, err := attachment.Base64URI()
 	require.NoError(t, err)
 	require.Equal(t, "data:text/plain;base64,aGVsbG8=", uri)
+}
+
+func TestBase64URIRejectsInvalidContentType(t *testing.T) {
+	attachment := &attachments.Attachment{
+		Filename:    "note.txt",
+		ContentType: "invalid",
+		Data:        []byte("hello"),
+	}
+
+	_, err := attachment.Base64URI()
+	require.Error(t, err)
 }
 
 // Verifies URL-backed attachments are downloaded through the shared HTTP

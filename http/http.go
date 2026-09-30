@@ -15,6 +15,8 @@ import (
 
 // Export selected standard-library functions so callers do not need to import
 // net/http just to construct requests through Horizon's client.
+// TODO: Add a client-side middleware/transport hook for shared outbound request
+// policies, including URL and redirect validation for SSRF prevention.
 var (
 	NewRequestWithContext = stdhttp.NewRequestWithContext
 	DefaultClient         = New()

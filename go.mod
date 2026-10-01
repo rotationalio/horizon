@@ -10,7 +10,7 @@ require (
 	go.rtnl.ai/confire v1.2.0
 	go.rtnl.ai/enumify v1.1.1
 	go.rtnl.ai/ulid v1.3.0
-	go.rtnl.ai/x v1.21.0
+	go.rtnl.ai/x v1.22.0
 	golang.org/x/oauth2 v0.37.0
 	gopkg.in/yaml.v3 v3.0.1
 )

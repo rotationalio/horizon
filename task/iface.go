@@ -30,8 +30,10 @@ type Runner interface {
 // CapabilityRunner is an optional runner extension for resolving task-selected
 // capability definitions and executing model-requested capabilities.
 type CapabilityRunner interface {
+	// Batch lookup for capability definitions by name.
 	LookupCapabilities(context.Context, []capabilities.Name) ([]capabilities.Definition, error)
-	ExecuteCapability(context.Context, capabilities.Request) (capabilities.Response, error)
+	// Execute a single capability request, returning a classified error when it fails.
+	ExecuteCapability(context.Context, capabilities.Request) (capabilities.Response, *capabilities.Error)
 }
 
 // If the runner implements this interface, it will be used to pre-process the input

@@ -19,17 +19,31 @@ type Prompts []*Prompt
 // A prompt is generally rendered from a [Template] and is a single message sent to the
 // LLM as part of a request to cause it to perform a generation.
 type Prompt struct {
-	ID        string         `json:"id,omitempty"`
-	Index     uint           `json:"index"`   // The index of the prompt in the list of prompts
-	Role      Role           `json:"role"`    // The role of the message sender.
-	Content   string         `json:"content"` // The rendered content of the message.
-	Status    string         `json:"status"`  // Any of "in_progress", "completed", "incomplete".
-	Phase     string         `json:"phase"`   // Any of "commentary", "final_answer".
-	Type      Type           `json:"type"`    // The normalized prompt content type.
-	Citations []Citation     `json:"citations,omitempty"`
-	Meta      map[string]any `json:"meta,omitempty"`
-	// TODO: ToolCalls   []capabilities.ToolCall   `json:"tool_calls,omitzero"`   // Assistant tool calls associated with the message.
-	// TODO: ToolResults []capabilities.ToolResult `json:"tool_results,omitzero"` // Results associated with prior tool calls.
+	ID          string         `json:"id,omitempty"`
+	Index       uint           `json:"index"`   // The index of the prompt in the list of prompts
+	Role        Role           `json:"role"`    // The role of the message sender.
+	Content     string         `json:"content"` // The rendered content of the message.
+	Status      string         `json:"status"`  // Any of "in_progress", "completed", "incomplete".
+	Phase       string         `json:"phase"`   // Any of "commentary", "final_answer".
+	Type        Type           `json:"type"`    // The normalized prompt content type.
+	Citations   []Citation     `json:"citations,omitempty"`
+	Meta        map[string]any `json:"meta,omitempty"`
+	ToolCalls   []ToolCall     `json:"tool_calls,omitempty"`   // Assistant tool calls associated with the message.
+	ToolResults []ToolResponse `json:"tool_results,omitempty"` // Results associated with prior tool calls.
+}
+
+// ToolCall is a provider-neutral function call in the inference transcript.
+type ToolCall struct {
+	CallID    string `json:"call_id"`
+	Name      string `json:"name"`
+	Arguments string `json:"arguments"`
+}
+
+// ToolResponse is a provider-neutral result correlated to an assistant tool call.
+type ToolResponse struct {
+	CallID  string `json:"call_id"`
+	Content string `json:"content"`
+	// TODO: support more than just textual string content here, such as files and binary data.
 }
 
 type Citation struct {

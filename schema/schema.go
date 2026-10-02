@@ -5,6 +5,7 @@ import (
 	"fmt"
 
 	"go.rtnl.ai/horizon/errors"
+	"go.rtnl.ai/horizon/modality"
 	"go.rtnl.ai/x/mime"
 	"go.rtnl.ai/x/semver"
 )
@@ -51,4 +52,19 @@ func (s *Schema) JSON() (_ any, err error) {
 
 	// TODO: return a resolved and validated JSON schema object from jsonschema-go
 	return json.RawMessage(s.Data), nil
+}
+
+// Defines an input interface including the modalities, context type, and any schema
+// used to validate the input context.
+type Input struct {
+	Modality modality.Modality `json:"modality" yaml:"modality" msg:"modality"`
+	Context  mime.Type         `json:"context" yaml:"context" msg:"context"`
+	Schema   *Schema           `json:"schema,omitempty" yaml:"schema,omitempty" msg:"schema,omitempty"`
+}
+
+// Defines an output interface including the modalities, and any schemas used to
+// validate or construct the output (such as JSON schemas being passed to the LLM).
+type Output struct {
+	Modality modality.Modality `json:"modality" yaml:"modality" msg:"modality"`
+	Schema   *Schema           `json:"schema,omitempty" yaml:"schema,omitempty" msg:"schema,omitempty"`
 }

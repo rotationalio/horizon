@@ -1,6 +1,12 @@
-package horizon
+package task
 
 import (
+	"bytes"
+	"fmt"
+	"io"
+	"mime/multipart"
+	"net/url"
+
 	"go.rtnl.ai/horizon/attachments"
 	"go.rtnl.ai/horizon/prompts"
 )
@@ -28,4 +34,49 @@ type Input struct {
 
 	// Any attachments from a multipart request that are attached to the input.
 	Attachments attachments.Attachments `json:"attachments,omitzero"`
+}
+
+// Decode values from the URL.
+func (i *Input) DecodeValues(values url.Values) (err error) {
+	i.Source = values.Get("source")
+	i.PreviousResponseID = values.Get("previous_response_id")
+	i.Instructions = values.Get("instructions")
+	i.Context = prompts.Context{prompts.DefaultContextKey: values.Get("context")}
+	return nil
+}
+
+// Decode values from a multipart part.
+func (i *Input) DecodePart(part *multipart.Part) (err error) {
+	// Read the part content
+	buf := bytes.NewBuffer(nil)
+	if _, err = io.Copy(buf, part); err != nil {
+		return err
+	}
+
+	// Decode file attachments.
+	if filename := part.FileName(); filename != "" {
+		i.Attachments = append(i.Attachments, &attachments.Attachment{
+			Filename: filename,
+			Data:     buf.Bytes(),
+		})
+		return nil
+	}
+
+	// If filename is empty, this is a form value.
+	if name := part.FormName(); name != "" {
+		switch name {
+		case "source":
+			i.Source = buf.String()
+		case "previous_response_id":
+			i.PreviousResponseID = buf.String()
+		case "instructions":
+			i.Instructions = buf.String()
+		case "context":
+			return i.Context.UnmarshalJSON(buf.Bytes())
+		default:
+			return fmt.Errorf("unknown form name: %s", name)
+		}
+	}
+
+	return nil
 }

@@ -1,4 +1,4 @@
-package horizon_test
+package task_test
 
 import (
 	"iter"
@@ -7,7 +7,7 @@ import (
 	"testing"
 
 	"github.com/stretchr/testify/require"
-	"go.rtnl.ai/horizon"
+	"go.rtnl.ai/horizon/task"
 	"go.rtnl.ai/x/semver"
 	"go.rtnl.ai/x/slugify"
 )
@@ -101,11 +101,11 @@ var (
 
 func TestRouter(t *testing.T) {
 	t.Run("Simple", func(t *testing.T) {
-		taska := &horizon.Task{Name: "Task A"}
-		taskb := &horizon.Task{Name: "Task B"}
-		taskc := &horizon.Task{Name: "Task C"}
+		taska := &task.Task{Name: "Task A"}
+		taskb := &task.Task{Name: "Task B"}
+		taskc := &task.Task{Name: "Task C"}
 
-		r := &horizon.Router{}
+		r := &task.Router{}
 		require.False(t, r.Insert("/", taska))
 		require.False(t, r.Insert("/tasks/a", taska))
 		require.False(t, r.Insert("/tasks/b", taskb))
@@ -131,7 +131,7 @@ func TestRouter(t *testing.T) {
 	})
 
 	t.Run("Complex", func(t *testing.T) {
-		r := &horizon.Router{}
+		r := &task.Router{}
 		paths := make([]*taskPath, 0, 1024)
 		for path := range randomPaths(1024) {
 			paths = append(paths, path)
@@ -154,15 +154,15 @@ func TestRouter(t *testing.T) {
 	})
 
 	t.Run("Update", func(t *testing.T) {
-		r := &horizon.Router{}
-		task := &horizon.Task{Name: randomTask()}
+		r := &task.Router{}
+		tsk := &task.Task{Name: randomTask()}
 
-		require.False(t, r.Insert("/path/to/task", task))
+		require.False(t, r.Insert("/path/to/task", tsk))
 		cmpt, ok := r.Get("/path/to/task")
 		require.True(t, ok)
-		require.Equal(t, task, cmpt)
+		require.Equal(t, tsk, cmpt)
 
-		replaced := &horizon.Task{Name: randomTask()}
+		replaced := &task.Task{Name: randomTask()}
 		require.True(t, r.Insert("/path/to/task", replaced))
 
 		cmpt, ok = r.Get("/path/to/task")
@@ -171,8 +171,8 @@ func TestRouter(t *testing.T) {
 	})
 
 	t.Run("Remove", func(t *testing.T) {
-		r := &horizon.Router{}
-		task := &horizon.Task{Name: randomTask()}
+		r := &task.Router{}
+		task := &task.Task{Name: randomTask()}
 		require.False(t, r.Insert("/path/to/task", task))
 		require.True(t, r.Remove("/path/to/task"))
 		_, ok := r.Get("/path/to/task")
@@ -181,7 +181,7 @@ func TestRouter(t *testing.T) {
 
 	t.Run("Root", func(t *testing.T) {
 		// There should be no panic if the router is empty
-		r := &horizon.Router{}
+		r := &task.Router{}
 		require.False(t, r.Remove(""))
 
 		// Router should still be empty and there should be no panic.
@@ -189,15 +189,15 @@ func TestRouter(t *testing.T) {
 		require.False(t, ok)
 
 		// Should be able to insert into an empty router.
-		task := &horizon.Task{Name: "test"}
+		task := &task.Task{Name: "test"}
 		require.False(t, r.Insert("/", task))
 	})
 
 	t.Run("RootPath", func(t *testing.T) {
 		testf := func(base string, root string) func(t *testing.T) {
 			return func(t *testing.T) {
-				r := &horizon.Router{}
-				task := &horizon.Task{Name: randomTask()}
+				r := &task.Router{}
+				task := &task.Task{Name: randomTask()}
 				require.False(t, r.Insert(base, task))
 				require.Equal(t, 1, r.Size())
 
@@ -232,7 +232,7 @@ func TestRouter(t *testing.T) {
 func BenchmarkRouterInsert(b *testing.B) {
 	benchTree := func(size int) func(b *testing.B) {
 		return func(b *testing.B) {
-			r := &horizon.Router{}
+			r := &task.Router{}
 			for path := range randomPaths(size) {
 				r.Insert(path.path, path.task)
 			}
@@ -248,7 +248,7 @@ func BenchmarkRouterInsert(b *testing.B) {
 
 	benchMap := func(size int) func(b *testing.B) {
 		return func(b *testing.B) {
-			m := make(map[string]*horizon.Task)
+			m := make(map[string]*task.Task)
 			for path := range randomPaths(size) {
 				m[path.path] = path.task
 			}
@@ -273,7 +273,7 @@ func BenchmarkRouterInsert(b *testing.B) {
 func BenchmarkRouterGet(b *testing.B) {
 	benchTree := func(size int) func(b *testing.B) {
 		return func(b *testing.B) {
-			r := &horizon.Router{}
+			r := &task.Router{}
 			paths := make([]*taskPath, 0, size)
 			for path := range randomPaths(size) {
 				paths = append(paths, path)
@@ -291,7 +291,7 @@ func BenchmarkRouterGet(b *testing.B) {
 
 	benchMap := func(size int) func(b *testing.B) {
 		return func(b *testing.B) {
-			m := make(map[string]*horizon.Task)
+			m := make(map[string]*task.Task)
 			paths := make([]*taskPath, 0, size)
 			for path := range randomPaths(size) {
 				paths = append(paths, path)
@@ -320,12 +320,12 @@ func BenchmarkRouterGet(b *testing.B) {
 //============================================================================
 
 type taskPath struct {
-	task *horizon.Task
+	task *task.Task
 	path string
 }
 
 func randomPaths(n int) iter.Seq[*taskPath] {
-	makep := func(task *horizon.Task, pathParts ...string) *taskPath {
+	makep := func(task *task.Task, pathParts ...string) *taskPath {
 		return &taskPath{
 			task: task,
 			path: "/" + strings.Join(pathParts, "/"),
@@ -345,7 +345,7 @@ func randomPaths(n int) iter.Seq[*taskPath] {
 
 			for range ntasks {
 				version := &semver.Version{Major: 1}
-				task := &horizon.Task{Name: randomTask()}
+				task := &task.Task{Name: randomTask()}
 				slug := slugify.Slugify(task.Name)
 
 				// Yield the latest task version

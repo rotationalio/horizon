@@ -12,6 +12,8 @@ import (
 // Performs inference and exposes a model catalog.
 type Provider = provider.Provider
 
+type ProviderConfig = provider.Config
+
 // Validates config and constructs the corresponding built-in provider.
 // Importing the root Horizon package registers all built-in provider
 // implementations automatically.

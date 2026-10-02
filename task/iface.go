@@ -1,4 +1,4 @@
-package horizon
+package task
 
 import (
 	"context"
@@ -70,5 +70,3 @@ type InputGuard interface {
 type OutputGuard interface {
 	ProtectOutput(*provider.Response) error
 }
-
-type ProviderConfig = provider.Config

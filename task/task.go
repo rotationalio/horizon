@@ -1,20 +1,15 @@
-package horizon
+package task
 
 import (
 	"context"
 
-	"go.rtnl.ai/horizon/modality"
 	"go.rtnl.ai/horizon/params"
 	"go.rtnl.ai/horizon/prompts"
 	"go.rtnl.ai/horizon/provider"
 	"go.rtnl.ai/horizon/schema"
 	"go.rtnl.ai/ulid"
-	"go.rtnl.ai/x/mime"
 	"go.rtnl.ai/x/semver"
 )
-
-// A JSON object is a map of string keys to any values.
-type JSON map[string]any
 
 //============================================================================
 // Detailed Task Data Definitions
@@ -32,8 +27,8 @@ type Task struct {
 	Name         string            `json:"name" yaml:"name" msg:"name"`                                                       // The name of the task
 	Description  string            `json:"description,omitempty" yaml:"description,omitempty" msg:"description,omitempty"`    // The description of the task
 	Version      semver.Version    `json:"version" yaml:"version" msg:"version"`                                              // The version of the task
-	Input        *TaskInput        `json:"input,omitempty" yaml:"input,omitempty" msg:"input,omitempty"`                      // The input schema of the task
-	Output       *TaskOutput       `json:"output" yaml:"output" msg:"output"`                                                 // The output type of the task
+	Input        *schema.Input     `json:"input,omitempty" yaml:"input,omitempty" msg:"input,omitempty"`                      // The input schema of the task
+	Output       *schema.Output    `json:"output" yaml:"output" msg:"output"`                                                 // The output type of the task
 	Model        Model             `json:"model" yaml:"model" msg:"model"`                                                    // The Model used for the task
 	Prompts      prompts.Templates `json:"prompts" yaml:"prompts" msg:"prompts"`                                              // The prompts used for the task
 	Capabilities *Capabilities     `json:"capabilities,omitempty" yaml:"capabilities,omitempty" msg:"capabilities,omitempty"` // The capabilities enabled for the task
@@ -41,21 +36,6 @@ type Task struct {
 	// Task Execution Configuration
 	// Tools *config.Tools
 	Provider *provider.Config `json:"provider,omitempty" yaml:"provider,omitempty" msg:"provider,omitempty"` // The inference provider used for the task
-}
-
-// Defines the input for a task including the modalities, context type, and any
-// schemas used to validate the input context.
-type TaskInput struct {
-	Modality modality.Modality `json:"modality" yaml:"modality" msg:"modality"`
-	Context  mime.Type         `json:"context" yaml:"context" msg:"context"`
-	Schema   *schema.Schema    `json:"schema,omitempty" yaml:"schema,omitempty" msg:"schema,omitempty"`
-}
-
-// Defines the output for a task including the modalities, and any schemas used to
-// validate or construct the output (such as JSON schemas being passed to the LLM).
-type TaskOutput struct {
-	Modality modality.Modality `json:"modality" yaml:"modality" msg:"modality"`
-	Schema   *schema.Schema    `json:"schema,omitempty" yaml:"schema,omitempty" msg:"schema,omitempty"`
 }
 
 // Defines the model used for a task by its slug and model parameters. The model is

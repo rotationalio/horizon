@@ -1,4 +1,4 @@
-package horizon
+package task
 
 import (
 	"errors"
@@ -18,7 +18,7 @@ func (r *Router) Size() int {
 }
 
 // Insert or replace a task at the given path. Returns true if the task was replaced.
-// NOTE: the path should be an absolute path with a leading `/` character. The path
+// NOTE: the path should be a n absolute path with a leading `/` character. The path
 // should also be URL safe (e.g. url encoded) with no query string.
 func (r *Router) Insert(path string, task *Task) bool {
 	// Prepare the router for the insert operation.

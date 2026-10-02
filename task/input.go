@@ -1,4 +1,4 @@
-package horizon
+package task
 
 import (
 	"bytes"
@@ -53,7 +53,16 @@ func (i *Input) DecodePart(part *multipart.Part) (err error) {
 		return err
 	}
 
-	// Decode form values.
+	// Decode file attachments.
+	if filename := part.FileName(); filename != "" {
+		i.Attachments = append(i.Attachments, &attachments.Attachment{
+			Filename: filename,
+			Data:     buf.Bytes(),
+		})
+		return nil
+	}
+
+	// If filename is empty, this is a form value.
 	if name := part.FormName(); name != "" {
 		switch name {
 		case "source":
@@ -67,14 +76,6 @@ func (i *Input) DecodePart(part *multipart.Part) (err error) {
 		default:
 			return fmt.Errorf("unknown form name: %s", name)
 		}
-	}
-
-	// Decode file attachments.
-	if filename := part.FileName(); filename != "" {
-		i.Attachments = append(i.Attachments, &attachments.Attachment{
-			Filename: filename,
-			Data:     buf.Bytes(),
-		})
 	}
 
 	return nil

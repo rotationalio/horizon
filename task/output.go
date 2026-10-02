@@ -1,9 +1,10 @@
-package horizon
+package task
 
 import (
 	"time"
 
 	"go.rtnl.ai/horizon/attachments"
+	"go.rtnl.ai/horizon/http"
 	"go.rtnl.ai/x/mime"
 )
 
@@ -48,9 +49,9 @@ type Actions []*Action
 // An action is a single action taken during a task execution, such as a message
 // prompt or a capability (tool/resource) call.
 type Action struct {
-	Name   string `json:"name"`            // The name of the action (e.g. "tool call", "prompt", etc.)
-	Target any    `json:"target"`          // Can be either a *Model or a *Capability
-	Params JSON   `json:"params"`          // The parameters sent to the target
-	Output JSON   `json:"output"`          // The output response of the action
-	Usage  *Usage `json:"usage,omitempty"` // Usage information for the action
+	Name   string    `json:"name"`            // The name of the action (e.g. "tool call", "prompt", etc.)
+	Target any       `json:"target"`          // Can be either a *Model or a *Capability
+	Params http.JSON `json:"params"`          // The parameters sent to the target
+	Output http.JSON `json:"output"`          // The output response of the action
+	Usage  *Usage    `json:"usage,omitempty"` // Usage information for the action
 }

@@ -1,10 +1,11 @@
-package horizon
+package task
 
 import (
 	"context"
 	"time"
 
 	"go.rtnl.ai/horizon/attachments"
+	"go.rtnl.ai/horizon/prompts"
 	"go.rtnl.ai/horizon/provider"
 )
 
@@ -154,7 +155,7 @@ func (p *process) Render(ctx context.Context) error {
 		}
 
 		// Use the default renderer to render the prompts.
-		if p.request.Input, err = Render(p.task.Prompts, p.input.Context); err != nil {
+		if p.request.Input, err = prompts.Render(p.task.Prompts, p.input.Context); err != nil {
 			return err
 		}
 		return nil

@@ -26,6 +26,9 @@ var (
 // from blocking forever.
 const MaximumRequestTimeout = 768 * time.Second
 
+// A JSON object is a map of string keys to any values.
+type JSON map[string]any
+
 // Returns Horizon's default HTTP client.
 func New() *stdhttp.Client {
 	return &stdhttp.Client{

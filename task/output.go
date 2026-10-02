@@ -4,19 +4,20 @@ import (
 	"time"
 
 	"go.rtnl.ai/horizon/attachments"
+	"go.rtnl.ai/horizon/capabilities"
 	"go.rtnl.ai/horizon/http"
 	"go.rtnl.ai/x/mime"
 )
 
 type Output struct {
-	Usage        Usage        `json:"usage"`
-	Model        Model        `json:"model"`
-	Output       any          `json:"output,omitempty"`
-	MimeType     mime.Type    `json:"mime_type"`
-	Capabilities Capabilities `json:"capabilities"`
-	Actions      Actions      `json:"actions,omitempty"`
-	Started      time.Time    `json:"started"`
-	Finished     time.Time    `json:"finished"`
+	Usage        Usage               `json:"usage"`
+	Model        Model               `json:"model"`
+	Output       any                 `json:"output,omitempty"`
+	MimeType     mime.Type           `json:"mime_type"`
+	Capabilities []capabilities.Name `json:"capabilities"`
+	Actions      Actions             `json:"actions,omitempty"`
+	Started      time.Time           `json:"started"`
+	Finished     time.Time           `json:"finished"`
 	Attachments  attachments.Attachments
 }
 

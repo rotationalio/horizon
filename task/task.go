@@ -3,6 +3,7 @@ package task
 import (
 	"context"
 
+	"go.rtnl.ai/horizon/capabilities"
 	"go.rtnl.ai/horizon/params"
 	"go.rtnl.ai/horizon/prompts"
 	"go.rtnl.ai/horizon/provider"
@@ -22,16 +23,16 @@ type Tasks []Task
 // necessary inputs, outputs, clients, capabilities, and other configuration.
 type Task struct {
 	// Task Definition
-	ID           ulid.ULID         `json:"id,omitempty" yaml:"id,omitempty" msg:"id,omitempty"`                               // The ID of the task
-	Slug         string            `json:"slug" yaml:"slug" msg:"slug"`                                                       // The slug of the task
-	Name         string            `json:"name" yaml:"name" msg:"name"`                                                       // The name of the task
-	Description  string            `json:"description,omitempty" yaml:"description,omitempty" msg:"description,omitempty"`    // The description of the task
-	Version      semver.Version    `json:"version" yaml:"version" msg:"version"`                                              // The version of the task
-	Input        *schema.Input     `json:"input,omitempty" yaml:"input,omitempty" msg:"input,omitempty"`                      // The input schema of the task
-	Output       *schema.Output    `json:"output" yaml:"output" msg:"output"`                                                 // The output type of the task
-	Model        Model             `json:"model" yaml:"model" msg:"model"`                                                    // The Model used for the task
-	Prompts      prompts.Templates `json:"prompts" yaml:"prompts" msg:"prompts"`                                              // The prompts used for the task
-	Capabilities *Capabilities     `json:"capabilities,omitempty" yaml:"capabilities,omitempty" msg:"capabilities,omitempty"` // The capabilities enabled for the task
+	ID           ulid.ULID           `json:"id,omitempty" yaml:"id,omitempty" msg:"id,omitempty"`                               // The ID of the task
+	Slug         string              `json:"slug" yaml:"slug" msg:"slug"`                                                       // The slug of the task
+	Name         string              `json:"name" yaml:"name" msg:"name"`                                                       // The name of the task
+	Description  string              `json:"description,omitempty" yaml:"description,omitempty" msg:"description,omitempty"`    // The description of the task
+	Version      semver.Version      `json:"version" yaml:"version" msg:"version"`                                              // The version of the task
+	Input        *schema.Input       `json:"input,omitempty" yaml:"input,omitempty" msg:"input,omitempty"`                      // The input schema of the task
+	Output       *schema.Output      `json:"output" yaml:"output" msg:"output"`                                                 // The output type of the task
+	Model        Model               `json:"model" yaml:"model" msg:"model"`                                                    // The Model used for the task
+	Prompts      prompts.Templates   `json:"prompts" yaml:"prompts" msg:"prompts"`                                              // The prompts used for the task
+	Capabilities []capabilities.Name `json:"capabilities,omitempty" yaml:"capabilities,omitempty" msg:"capabilities,omitempty"` // The capabilities enabled for the task
 
 	// Task Execution Configuration
 	// Tools *config.Tools
@@ -43,13 +44,6 @@ type Task struct {
 type Model struct {
 	Slug       string         `json:"slug" yaml:"slug" msg:"slug"`
 	Parameters *params.Params `json:"parameters,omitempty" yaml:"parameters,omitempty" msg:"parameters,omitempty"`
-}
-
-// Capabilities that can be used by the LLM during a task execution.
-type Capabilities struct {
-	Tools     []string `json:"tools,omitempty" yaml:"tools,omitempty" msg:"tools,omitempty"`             // The tools enabled for the task
-	Resources []string `json:"resources,omitempty" yaml:"resources,omitempty" msg:"resources,omitempty"` // The resources enabled for the task
-	Prompts   []string `json:"prompts,omitempty" yaml:"prompts,omitempty" msg:"prompts,omitempty"`       // The prompts enabled for the task
 }
 
 // Executes the task with the given input and runner, returning the result.
@@ -68,6 +62,5 @@ func (t *Task) request() *provider.Request {
 		Model:        t.Model.Slug,
 		Params:       t.Model.Parameters,
 		OutputSchema: t.Output.Schema,
-		Tools:        t.Capabilities.Tools,
 	}
 }

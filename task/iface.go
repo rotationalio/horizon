@@ -4,6 +4,7 @@ import (
 	"context"
 
 	"go.rtnl.ai/horizon/attachments"
+	"go.rtnl.ai/horizon/capabilities"
 	"go.rtnl.ai/horizon/prompts"
 	"go.rtnl.ai/horizon/provider"
 )
@@ -24,6 +25,15 @@ type Runner interface {
 	// The finalize method will always be called last allowing the runner to perform any
 	// necessary cleanup or modify the results of the task execution.
 	Finalize(context.Context, *Output) error
+}
+
+// CapabilityRunner is an optional runner extension for resolving task-selected
+// capability definitions and executing model-requested capabilities.
+type CapabilityRunner interface {
+	// Batch lookup for capability definitions by name.
+	LookupCapabilities(context.Context, []capabilities.Name) ([]capabilities.Definition, error)
+	// Execute a single capability request, returning a classified error when it fails.
+	ExecuteCapability(context.Context, capabilities.Request) (capabilities.Response, *capabilities.Error)
 }
 
 // If the runner implements this interface, it will be used to pre-process the input

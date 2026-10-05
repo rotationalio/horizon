@@ -22,8 +22,7 @@ import (
 // Test making requests to the HTTP handler
 func TestTaskHandler(t *testing.T) {
 	tsk := &task.Task{
-		Output:       &schema.Output{},
-		Capabilities: &task.Capabilities{},
+		Output: &schema.Output{},
 	}
 
 	t.Run("Get", func(t *testing.T) {

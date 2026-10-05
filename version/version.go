@@ -22,13 +22,18 @@ func UserAgent() string {
 }
 
 // Returns the semantic version for the current build.
-func String(short bool) string {
-	vers := semver.Version{
+func Version() semver.Version {
+	return semver.Version{
 		Major:      Major,
 		Minor:      Minor,
 		Patch:      Patch,
 		PreRelease: PreRelease(),
 	}
+}
+
+// Returns the human-readable version string for the current build.
+func String(short bool) string {
+	vers := Version()
 
 	if short {
 		return vers.Short()

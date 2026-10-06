@@ -43,13 +43,13 @@ func New(conf provider.Config) (*oai.Client, error) {
 	if conf.Credentials != nil {
 		switch conf.Credentials.Type() {
 		case auth.TypeAPIKey:
-			apiKey, err := conf.Credentials.(auth.APIKey).APIKey()
+			apiKey, err := conf.Credentials.APIKey()
 			if err != nil {
 				return nil, err
 			}
 			opts = append(opts, option.WithAPIKey(apiKey))
 		case auth.TypeOpenAIOrganization:
-			apiKey, organization, project, err := conf.Credentials.(auth.OpenAIOrganization).OpenAIOrganization()
+			apiKey, organization, project, err := conf.Credentials.OpenAIOrganization()
 			if err != nil {
 				return nil, err
 			}

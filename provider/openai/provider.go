@@ -4,15 +4,22 @@ import (
 	"go.rtnl.ai/horizon/errors"
 	"go.rtnl.ai/horizon/provider"
 	"go.rtnl.ai/horizon/provider/auth"
+	"go.rtnl.ai/ulid"
 )
 
 // Implements the Horizon provider interface using OpenAI APIs.
 type Provider struct {
+	id ulid.ULID
 	provider.Generator
 	*CatalogClient
 }
 
 var _ provider.Provider = (*Provider)(nil)
+
+// ID returns the provider configuration ID.
+func (p *Provider) ID() ulid.ULID {
+	return p.id
+}
 
 func init() {
 	provider.Register(provider.ProviderTypeOpenAI, provider.Registration{
@@ -36,7 +43,7 @@ func init() {
 
 // Constructs an OpenAI or OpenAI-compatible provider.
 func NewProvider(conf provider.Config) (p provider.Provider, err error) {
-	client := &Provider{}
+	client := &Provider{id: conf.ID}
 	switch conf.APIType {
 	case provider.APITypeOpenAIResponses:
 		if client.Generator, err = NewResponses(conf); err != nil {

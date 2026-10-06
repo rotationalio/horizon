@@ -12,9 +12,12 @@
 //		"go.rtnl.ai/horizon/prompts"
 //		"go.rtnl.ai/horizon/provider"
 //		"go.rtnl.ai/horizon/provider/auth"
+//		"go.rtnl.ai/ulid"
 //	)
 //
+//	providerID, _ := ulid.Parse("01ARZ3NDEKTSV4RRFFQ69G5FAV")
 //	client, err := horizon.NewProvider(provider.Config{
+//		ID:               providerID,
 //		APIType:           provider.APITypeOpenAIResponses,
 //		ProviderType:      provider.ProviderTypeOpenAI,
 //		InferenceEndpoint: "https://api.openai.com/v1",
@@ -55,6 +58,7 @@ import (
 	"context"
 
 	"go.rtnl.ai/horizon/provider/catalog"
+	"go.rtnl.ai/ulid"
 )
 
 // Generates provider-neutral inference responses.
@@ -67,6 +71,9 @@ type Generator interface {
 // provider.
 type Provider interface {
 	Generator
+
+	// Returns the application-assigned ID of this provider configuration.
+	ID() ulid.ULID
 
 	// Returns a list of all [catalog.Model] from the provider's catalog.
 	FetchCatalog(ctx context.Context) ([]catalog.Model, error)

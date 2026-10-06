@@ -4,12 +4,14 @@ import (
 	"testing"
 
 	"github.com/stretchr/testify/require"
+
 	"go.rtnl.ai/horizon/errors"
 	"go.rtnl.ai/horizon/provider"
 	"go.rtnl.ai/horizon/provider/auth"
 	"go.rtnl.ai/horizon/provider/mock"
 	"go.rtnl.ai/horizon/provider/openai"
 	"go.rtnl.ai/horizon/provider/openrouter"
+	"go.rtnl.ai/x/validation"
 )
 
 // Verifies registered built-in providers are constructed for valid
@@ -17,6 +19,7 @@ import (
 func TestNew(t *testing.T) {
 	t.Run("OpenAI", func(t *testing.T) {
 		actual, err := provider.New(provider.Config{
+			ID:                providerTestID,
 			APIType:           provider.APITypeOpenAIResponses,
 			ProviderType:      provider.ProviderTypeOpenAI,
 			InferenceEndpoint: "https://api.openai.com/v1",
@@ -29,6 +32,7 @@ func TestNew(t *testing.T) {
 
 	t.Run("OpenRouter", func(t *testing.T) {
 		actual, err := provider.New(provider.Config{
+			ID:                providerTestID,
 			APIType:           provider.APITypeOpenAIChatCompletions,
 			ProviderType:      provider.ProviderTypeOpenRouter,
 			InferenceEndpoint: "https://openrouter.ai/api/v1",
@@ -41,6 +45,7 @@ func TestNew(t *testing.T) {
 
 	t.Run("OpenAICompatibleWithoutAuth", func(t *testing.T) {
 		actual, err := provider.New(provider.Config{
+			ID:                providerTestID,
 			APIType:           provider.APITypeOpenAIChatCompletions,
 			ProviderType:      provider.ProviderTypeOpenAICompatible,
 			InferenceEndpoint: "http://localhost:11434/v1",
@@ -54,6 +59,7 @@ func TestNew(t *testing.T) {
 
 	t.Run("Mock", func(t *testing.T) {
 		actual, err := provider.New(provider.Config{
+			ID:           providerTestID,
 			APIType:      provider.APITypeMock,
 			ProviderType: provider.ProviderTypeMock,
 			Credentials:  auth.NewNone(),
@@ -62,15 +68,38 @@ func TestNew(t *testing.T) {
 		require.IsType(t, &mock.MockProvider{}, actual)
 	})
 
+	t.Run("UnsupportedDirectAPI", func(t *testing.T) {
+		constructors := []struct {
+			name        string
+			newProvider provider.Factory
+		}{
+			{
+				name:        "OpenAI",
+				newProvider: openai.NewProvider,
+			},
+			{
+				name:        "OpenRouter",
+				newProvider: openrouter.NewProvider,
+			},
+		}
+		for _, tt := range constructors {
+			t.Run(tt.name, func(t *testing.T) {
+				_, err := tt.newProvider(provider.Config{APIType: provider.APITypeMock})
+				require.ErrorIs(t, err, errors.ErrUnsupportedAPIType)
+			})
+		}
+	})
+
 	t.Run("UnsupportedAPI", func(t *testing.T) {
 		_, err := provider.New(provider.Config{
+			ID:                providerTestID,
 			APIType:           provider.APITypeMock,
 			ProviderType:      provider.ProviderTypeOpenAI,
 			InferenceEndpoint: "https://api.openai.com/v1",
 			CatalogEndpoint:   "https://api.openai.com/v1/models",
 			Credentials:       auth.NewAPIKey("secret"),
 		})
-		require.ErrorIs(t, err, errors.ErrUnsupportedAPIType)
+		validation.RequireValidationFields(t, err, "api_type")
 	})
 }
 

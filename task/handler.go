@@ -25,11 +25,8 @@ type Handler struct {
 // TODO: ensure all responses are Content-Type: application/json.
 func (h *Handler) Handle(w http.ResponseWriter, r *http.Request) {
 	var (
-		ok     bool
-		err    error
-		task   *Task
-		input  *Input
-		output *Output
+		ok   bool
+		task *Task
 	)
 
 	// Load the task from the router.
@@ -38,26 +35,9 @@ func (h *Handler) Handle(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 
-	// Load the input from the request.
-	// TODO: better validation of the request for better error messages.
-	if input, err = decodeInput(r); err != nil {
-		replyJSON(w, api.Error(err), http.StatusBadRequest)
-		return
-	}
-
-	if output, err = task.Run(r.Context(), input, h.runner); err != nil {
-		replyJSON(w, api.Error(err), http.StatusInternalServerError)
-		return
-	}
-
-	// Write the output to the response.
-	if err = replyOutput(w, output); err != nil {
-		replyJSON(w, api.Error(err), http.StatusInternalServerError)
-		return
-	}
-
-	// Write the response.
-	w.WriteHeader(http.StatusOK)
+	// Handle the task; this function handles the input decoding and HTTP response
+	// writing.
+	handleTask(w, r, task, h.runner)
 }
 
 type TaskHandler struct {
@@ -67,30 +47,31 @@ type TaskHandler struct {
 
 // Implements the http.Handler interface.
 func (h *TaskHandler) Handle(w http.ResponseWriter, r *http.Request) {
+	handleTask(w, r, h.task, h.runner)
+}
+
+func handleTask(w http.ResponseWriter, r *http.Request, task *Task, runner Runner) {
 	var (
 		err    error
 		input  *Input
 		output *Output
 	)
 
-	// Load the input from the request.
 	if input, err = decodeInput(r); err != nil {
 		replyJSON(w, api.Error(err), http.StatusBadRequest)
 		return
 	}
 
-	if output, err = h.task.Run(r.Context(), input, h.runner); err != nil {
+	if output, err = task.Run(r.Context(), input, runner); err != nil {
 		replyJSON(w, api.Error(err), http.StatusInternalServerError)
 		return
 	}
 
-	// Write the output to the response.
 	if err = replyOutput(w, output); err != nil {
 		replyJSON(w, api.Error(err), http.StatusInternalServerError)
 		return
 	}
 
-	// Write the response.
 	w.WriteHeader(http.StatusOK)
 }
 

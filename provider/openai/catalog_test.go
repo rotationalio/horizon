@@ -81,7 +81,10 @@ func TestFetchLive(t *testing.T) {
 	})
 	require.NoError(t, err)
 
-	models, err := client.FetchCatalog(context.Background())
+	ctx, cancel := context.WithTimeout(context.Background(), testenv.LiveRequestTimeout)
+	defer cancel()
+
+	models, err := client.FetchCatalog(ctx)
 	require.NoError(t, err)
 	require.Greater(t, len(models), 1)
 

@@ -2,14 +2,15 @@ package provider
 
 import (
 	"fmt"
+	stdhttp "net/http"
 	"slices"
 	"sync"
 
 	"go.rtnl.ai/horizon/provider/auth"
 )
 
-// Constructs a provider from validated configuration.
-type Factory func(Config) (Provider, error)
+// Factory constructs a provider from validated configuration and an optional HTTP client.
+type Factory func(Config, *stdhttp.Client) (Provider, error)
 
 // Describes a provider implementation and the configurations it supports.
 type Registration struct {
@@ -53,18 +54,24 @@ func Register(providerType ProviderType, registration Registration) {
 	registry.providers[providerType] = registration
 }
 
-// Validates config and constructs its registered provider.
+// New validates config and constructs its registered provider using the default HTTP client.
 //
 // NOTE: see the documentation on the provider package for more details on how
 // to import provider implementation packages if you use this function
 // directly, otherwise the use of [horizon.NewProvider] is preferred.
 func New(config Config) (Provider, error) {
+	return NewWithHTTPClient(config, nil)
+}
+
+// NewWithHTTPClient validates config and constructs its registered provider using client.
+// A nil client lets the provider implementation use its default client.
+func NewWithHTTPClient(config Config, client *stdhttp.Client) (Provider, error) {
 	if err := config.Validate(); err != nil {
 		return nil, err
 	}
 
 	registration, _ := LookupRegistration(config.ProviderType)
-	return registration.Factory(config)
+	return registration.Factory(config, client)
 }
 
 // Returns the [Registration] for the given provider type, if it is registered.

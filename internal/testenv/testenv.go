@@ -6,11 +6,17 @@ import (
 	"path/filepath"
 	"runtime"
 	"testing"
+	"time"
 
 	"github.com/joho/godotenv"
 )
 
-const defaultOpenRouterEndpoint = "https://openrouter.ai/api/v1"
+const (
+	defaultOpenRouterEndpoint = "https://openrouter.ai/api/v1"
+
+	// LiveRequestTimeout caps each live integration request.
+	LiveRequestTimeout = 10 * time.Second
+)
 
 // Loads repository test variables without overriding shell or CI variables.
 func Load(t testing.TB) {

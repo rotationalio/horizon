@@ -9,6 +9,7 @@ import (
 	"time"
 
 	"github.com/stretchr/testify/require"
+	"go.rtnl.ai/horizon/internal/testenv"
 	"go.rtnl.ai/horizon/modality"
 	"go.rtnl.ai/horizon/provider"
 	"go.rtnl.ai/horizon/provider/auth"
@@ -76,7 +77,10 @@ func TestFetchLive(t *testing.T) {
 
 	client := testCatalogClient(t)
 
-	models, err := client.FetchCatalog(context.Background())
+	ctx, cancel := context.WithTimeout(context.Background(), testenv.LiveRequestTimeout)
+	defer cancel()
+
+	models, err := client.FetchCatalog(ctx)
 	require.NoError(t, err)
 	require.Greater(t, len(models), 1)
 

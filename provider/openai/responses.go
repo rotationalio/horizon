@@ -3,7 +3,8 @@ package openai
 import (
 	"context"
 	"encoding/json"
-	"errors"
+	stdhttp "net/http"
+
 	"fmt"
 	"strconv"
 	"strings"
@@ -14,6 +15,8 @@ import (
 	"github.com/openai/openai-go/v3/responses"
 	"github.com/openai/openai-go/v3/shared"
 	"go.rtnl.ai/horizon/attachments"
+	"go.rtnl.ai/horizon/config"
+	"go.rtnl.ai/horizon/errors"
 	"go.rtnl.ai/horizon/prompts"
 	"go.rtnl.ai/horizon/provider"
 	"go.rtnl.ai/horizon/schema"
@@ -29,10 +32,15 @@ type ResponsesClient struct {
 	client *openai.Client
 }
 
-// Creates a new [ResponsesClient] from the given client configuration.
-func NewResponses(conf provider.Config) (rc *ResponsesClient, err error) {
+// NewResponses creates a client from the given configuration using Horizon's default HTTP client.
+func NewResponses(conf provider.Config) (*ResponsesClient, error) {
+	return NewResponsesWithHTTPClient(conf, nil)
+}
+
+// NewResponsesWithHTTPClient creates a client using the supplied HTTP client.
+func NewResponsesWithHTTPClient(conf provider.Config, client *stdhttp.Client) (rc *ResponsesClient, err error) {
 	rc = &ResponsesClient{}
-	if rc.client, err = New(conf); err != nil {
+	if rc.client, err = NewWithHTTPClient(conf, client); err != nil {
 		return nil, err
 	}
 	return rc, nil
@@ -47,8 +55,12 @@ func (rc *ResponsesClient) Generate(ctx context.Context, req *provider.Request) 
 	}
 
 	// Execute the responses API request.
+	conf, err := config.Get()
+	if err != nil {
+		return nil, err
+	}
 	var resp *responses.Response
-	if resp, err = rc.client.Responses.New(ctx, body, option.WithRequestTimeout(provider.DefaultRequestTimeout)); err != nil {
+	if resp, err = rc.client.Responses.New(ctx, body, option.WithRequestTimeout(conf.ProviderRequestTimeout)); err != nil {
 		// TODO: handle errors in a standardized way
 		return nil, err
 	}

@@ -5,7 +5,6 @@ import (
 	"encoding/json"
 	"strings"
 	"testing"
-	"time"
 
 	"github.com/openai/openai-go/v3/packages/param"
 	"github.com/openai/openai-go/v3/responses"
@@ -220,7 +219,7 @@ func TestResponsesIntegration(t *testing.T) {
 	require.NoError(t, err)
 
 	t.Run("Simple", func(t *testing.T) {
-		ctx, cancel := context.WithTimeout(context.Background(), 30*time.Second)
+		ctx, cancel := context.WithTimeout(context.Background(), testenv.LiveRequestTimeout)
 		defer cancel()
 
 		req := &provider.Request{
@@ -251,7 +250,7 @@ func TestResponsesIntegration(t *testing.T) {
 	})
 
 	t.Run("OutputSchema", func(t *testing.T) {
-		ctx, cancel := context.WithTimeout(context.Background(), 30*time.Second)
+		ctx, cancel := context.WithTimeout(context.Background(), testenv.LiveRequestTimeout)
 		defer cancel()
 
 		req := &provider.Request{
@@ -311,7 +310,7 @@ func TestResponsesIntegration(t *testing.T) {
 	})
 
 	t.Run("TextAttachment", func(t *testing.T) {
-		ctx, cancel := context.WithTimeout(context.Background(), 30*time.Second)
+		ctx, cancel := context.WithTimeout(context.Background(), testenv.LiveRequestTimeout)
 		defer cancel()
 
 		req := &provider.Request{
@@ -364,7 +363,7 @@ func TestResponsesIntegration(t *testing.T) {
 	})
 
 	t.Run("ImageAttachment", func(t *testing.T) {
-		ctx, cancel := context.WithTimeout(context.Background(), 30*time.Second)
+		ctx, cancel := context.WithTimeout(context.Background(), testenv.LiveRequestTimeout)
 		defer cancel()
 
 		req := &provider.Request{
@@ -421,7 +420,7 @@ func TestResponsesIntegration(t *testing.T) {
 	})
 
 	t.Run("AudioAttachment", func(t *testing.T) {
-		ctx, cancel := context.WithTimeout(context.Background(), 30*time.Second)
+		ctx, cancel := context.WithTimeout(context.Background(), testenv.LiveRequestTimeout)
 		defer cancel()
 
 		req := &provider.Request{
@@ -474,7 +473,7 @@ func TestResponsesIntegration(t *testing.T) {
 	})
 
 	t.Run("FileAttachment", func(t *testing.T) {
-		ctx, cancel := context.WithTimeout(context.Background(), 30*time.Second)
+		ctx, cancel := context.WithTimeout(context.Background(), testenv.LiveRequestTimeout)
 		defer cancel()
 
 		req := &provider.Request{

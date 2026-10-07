@@ -3,7 +3,8 @@ package openai
 import (
 	"context"
 	"encoding/base64"
-	"errors"
+	stdhttp "net/http"
+
 	"fmt"
 	"strconv"
 	"strings"
@@ -13,6 +14,8 @@ import (
 	"github.com/openai/openai-go/v3/option"
 	"github.com/openai/openai-go/v3/shared"
 	"go.rtnl.ai/horizon/attachments"
+	"go.rtnl.ai/horizon/config"
+	"go.rtnl.ai/horizon/errors"
 	"go.rtnl.ai/horizon/prompts"
 	"go.rtnl.ai/horizon/provider"
 	"go.rtnl.ai/horizon/schema"
@@ -28,10 +31,15 @@ type ChatCompletionsClient struct {
 	client *openai.Client
 }
 
-// Creates a new [ChatCompletionsClient] from the given client configuration.
-func NewChatCompletions(conf provider.Config) (cc *ChatCompletionsClient, err error) {
+// NewChatCompletions creates a client from the given configuration using Horizon's default HTTP client.
+func NewChatCompletions(conf provider.Config) (*ChatCompletionsClient, error) {
+	return NewChatCompletionsWithHTTPClient(conf, nil)
+}
+
+// NewChatCompletionsWithHTTPClient creates a client using the supplied HTTP client.
+func NewChatCompletionsWithHTTPClient(conf provider.Config, client *stdhttp.Client) (cc *ChatCompletionsClient, err error) {
 	cc = &ChatCompletionsClient{}
-	if cc.client, err = New(conf); err != nil {
+	if cc.client, err = NewWithHTTPClient(conf, client); err != nil {
 		return nil, err
 	}
 	return cc, nil
@@ -46,8 +54,12 @@ func (cc *ChatCompletionsClient) Generate(ctx context.Context, req *provider.Req
 	}
 
 	// Execute the chat completions API request.
+	conf, err := config.Get()
+	if err != nil {
+		return nil, err
+	}
 	var completion *openai.ChatCompletion
-	if completion, err = cc.client.Chat.Completions.New(ctx, body, option.WithRequestTimeout(provider.DefaultRequestTimeout)); err != nil {
+	if completion, err = cc.client.Chat.Completions.New(ctx, body, option.WithRequestTimeout(conf.ProviderRequestTimeout)); err != nil {
 		// TODO: handle errors in a standardized way
 		return nil, err
 	}

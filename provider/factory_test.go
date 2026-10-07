@@ -75,16 +75,16 @@ func TestNew(t *testing.T) {
 		}{
 			{
 				name:        "OpenAI",
-				newProvider: openai.NewProvider,
+				newProvider: openai.NewProviderWithHTTPClient,
 			},
 			{
 				name:        "OpenRouter",
-				newProvider: openrouter.NewProvider,
+				newProvider: openrouter.NewProviderWithHTTPClient,
 			},
 		}
 		for _, tt := range constructors {
 			t.Run(tt.name, func(t *testing.T) {
-				_, err := tt.newProvider(provider.Config{APIType: provider.APITypeMock})
+				_, err := tt.newProvider(provider.Config{APIType: provider.APITypeMock}, nil)
 				require.ErrorIs(t, err, errors.ErrUnsupportedAPIType)
 			})
 		}

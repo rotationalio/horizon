@@ -4,7 +4,7 @@ import (
 	"bytes"
 	"context"
 	"encoding/json"
-	"errors"
+
 	"io"
 	"mime"
 	"mime/multipart"
@@ -15,21 +15,60 @@ import (
 	"testing"
 
 	"github.com/stretchr/testify/require"
-	"go.rtnl.ai/horizon"
 	"go.rtnl.ai/horizon/attachments"
+	"go.rtnl.ai/horizon/errors"
+	"go.rtnl.ai/horizon/prompts"
+	"go.rtnl.ai/horizon/provider"
 	providermock "go.rtnl.ai/horizon/provider/mock"
 	"go.rtnl.ai/horizon/schema"
 	"go.rtnl.ai/horizon/task"
 	"go.rtnl.ai/horizon/task/mock"
 )
 
-type inputRunner struct {
-	*mock.Runner
-	onInput func(*task.Input) (*task.Input, error)
-}
+// Verifies the handler using a cached mock provider.
+func TestHandlerInference(t *testing.T) {
+	config := testProviderConfig()
+	instance := providermock.New(config.ID)
+	instance.OnGenerate = func(_ context.Context, request *provider.Request) (*provider.Response, error) {
+		require.Equal(t, "test-model", request.Model)
+		return &provider.Response{
+			Model: "test-model",
+			Output: prompts.Prompts{
+				{Role: prompts.RoleAssistant, Content: "generated"},
+			},
+			Usage: provider.Usage{
+				InputTokens:  2,
+				OutputTokens: 3,
+				TotalTokens:  5,
+			},
+		}, nil
+	}
 
-func (r *inputRunner) ProcessInput(input *task.Input) (*task.Input, error) {
-	return r.onInput(input)
+	h := newTestHorizon(t, testFactory(func(context.Context) (task.Runner, error) {
+		return noopRunner(), nil
+	}))
+	_, err := h.GetOrCreateProvider(config, instance)
+	require.NoError(t, err)
+	handler := h.Handler()
+	handler.Router().Insert("/task", &task.Task{
+		Model:    task.Model{Slug: "test-model"},
+		Provider: &config,
+		Output:   &schema.Output{},
+	})
+	response := httptest.NewRecorder()
+	handler.ServeHTTP(response, httptest.NewRequest(http.MethodGet, "/task", nil))
+
+	require.Equal(t, http.StatusOK, response.Code)
+	require.Equal(t, "application/json", response.Header().Get("Content-Type"))
+	var output task.Output
+	require.NoError(t, json.NewDecoder(response.Body).Decode(&output))
+	require.Equal(t, "generated", output.Output)
+	require.Equal(t, "test-model", output.Model.Slug)
+	require.Equal(t, uint64(1), output.Usage.Invocations)
+	require.Equal(t, int64(2), output.Usage.InputTokens)
+	require.Equal(t, int64(3), output.Usage.OutputTokens)
+	require.Equal(t, int64(5), output.Usage.TotalTokens)
+	require.Equal(t, 1, instance.Calls(t, providermock.Generate))
 }
 
 // Verifies routed requests preserve GET, JSON, multipart input, and output handling.
@@ -68,17 +107,18 @@ func TestHandler(t *testing.T) {
 	for _, tt := range tests {
 		t.Run(tt.name, func(t *testing.T) {
 			created, processed := 0, 0
-			h := horizon.New(testFactory(func(context.Context) (task.Runner, error) {
+			var processor *mock.InputProcessor
+			h := newTestHorizon(t, testFactory(func(context.Context) (task.Runner, error) {
 				created++
 				runner := selectedRunner()
-				runner.OnFinalize = func(_ context.Context, output *task.Output) error {
+				runner.OnFinalize = func(_ context.Context, output *task.Output, _ error) error {
 					output.Output = "Hello, world!"
 					if tt.name == "ReplyAttachments" {
 						output.Attachments = attachments.Attachments{{Filename: "test.txt", Data: []byte("Generated file content.")}}
 					}
 					return nil
 				}
-				return &inputRunner{Runner: runner, onInput: func(input *task.Input) (*task.Input, error) {
+				processor = &mock.InputProcessor{OnProcessInput: func(input *task.Input) (*task.Input, error) {
 					processed++
 					require.Equal(t, "value", input.Context["context"])
 					if tt.attachments {
@@ -87,9 +127,14 @@ func TestHandler(t *testing.T) {
 						require.Equal(t, []byte("This is an attached file."), input.Attachments[0].Data)
 					}
 					return input, nil
-				}}, nil
+				}}
+				return struct {
+					*mock.Runner
+					*mock.InputProcessor
+				}{Runner: runner, InputProcessor: processor}, nil
 			}))
-			require.NoError(t, h.AddProviderInstance(testProviderConfig(), providermock.New(testProviderID)))
+			_, err := h.GetOrCreateProvider(testProviderConfig(), readyProvider())
+			require.NoError(t, err)
 			tsk := &task.Task{Output: &schema.Output{}}
 			handler := h.Handler()
 			handler.Router().Insert("/task", tsk)
@@ -99,6 +144,7 @@ func TestHandler(t *testing.T) {
 			require.Equal(t, http.StatusOK, response.Code)
 			require.Equal(t, 1, created)
 			require.Equal(t, 1, processed)
+			processor.AssertCalled(t, mock.ProcessInput, 1)
 			require.Nil(t, tsk.Provider)
 			if tt.name == "ReplyAttachments" {
 				mediaType, params, err := mime.ParseMediaType(response.Header().Get("Content-Type"))
@@ -110,6 +156,7 @@ func TestHandler(t *testing.T) {
 				require.Equal(t, "output", part.FormName())
 				var output task.Output
 				require.NoError(t, json.NewDecoder(part).Decode(&output))
+				require.Equal(t, task.OutcomeSucceeded, output.Outcome)
 				require.Equal(t, "Hello, world!", output.Output)
 				part, err = reader.NextPart()
 				require.NoError(t, err)
@@ -123,6 +170,7 @@ func TestHandler(t *testing.T) {
 				require.Equal(t, "application/json", response.Header().Get("Content-Type"))
 				var output task.Output
 				require.NoError(t, json.NewDecoder(response.Body).Decode(&output))
+				require.Equal(t, task.OutcomeSucceeded, output.Outcome)
 				require.Equal(t, "Hello, world!", output.Output)
 			}
 		})
@@ -182,21 +230,25 @@ func TestHandlerErrors(t *testing.T) {
 	for _, tt := range tests {
 		t.Run(tt.name, func(t *testing.T) {
 			created := 0
-			h := horizon.New(testFactory(func(context.Context) (task.Runner, error) {
+			h := newTestHorizon(t, testFactory(func(context.Context) (task.Runner, error) {
 				created++
 				if tt.factoryErr {
-					return nil, errors.New("factory failed")
+					return nil, errors.New("factory failed: fake-secret")
 				}
 				runner := selectedRunner()
 				if tt.prepareErr {
-					runner.OnPrepare = func(context.Context, *task.Task) error { return errors.New("prepare failed") }
+					runner.OnPrepare = func(context.Context, *task.Task) error { return errors.New("prepare failed: fake-secret") }
 				}
 				if tt.finalizeErr {
-					runner.OnFinalize = func(context.Context, *task.Output) error { return errors.New("finalize failed") }
+					runner.OnFinalize = func(_ context.Context, output *task.Output, _ error) error {
+						output.Output = "partial-secret"
+						return errors.New("finalize failed: fake-secret")
+					}
 				}
 				return runner, nil
 			}))
-			require.NoError(t, h.AddProviderInstance(testProviderConfig(), providermock.New(testProviderID)))
+			_, err := h.GetOrCreateProvider(testProviderConfig(), readyProvider())
+			require.NoError(t, err)
 			h.Handler().Router().Insert("/task", &task.Task{Output: &schema.Output{}})
 			response := httptest.NewRecorder()
 			h.Handler().ServeHTTP(response, httptest.NewRequest(http.MethodPost, tt.path, strings.NewReader(tt.body)))
@@ -204,13 +256,15 @@ func TestHandlerErrors(t *testing.T) {
 			require.Equal(t, "application/json", response.Header().Get("Content-Type"))
 			require.Equal(t, tt.created, created)
 			require.True(t, json.Valid(response.Body.Bytes()))
+			require.NotContains(t, response.Body.String(), "fake-secret")
+			require.NotContains(t, response.Body.String(), "partial-secret")
 		})
 	}
 }
 
 // Verifies callers can insert, replace, retrieve, and remove routes on Horizon's handler.
 func TestHandlerRoutes(t *testing.T) {
-	h := horizon.New(testFactory(func(context.Context) (task.Runner, error) {
+	h := newTestHorizon(t, testFactory(func(context.Context) (task.Runner, error) {
 		runner := selectedRunner()
 		var name string
 		prepare := runner.OnPrepare
@@ -218,13 +272,14 @@ func TestHandlerRoutes(t *testing.T) {
 			name = tsk.Name
 			return prepare(ctx, tsk)
 		}
-		runner.OnFinalize = func(_ context.Context, output *task.Output) error {
+		runner.OnFinalize = func(_ context.Context, output *task.Output, _ error) error {
 			output.Output = name
 			return nil
 		}
 		return runner, nil
 	}))
-	require.NoError(t, h.AddProviderInstance(testProviderConfig(), providermock.New(testProviderID)))
+	_, err := h.GetOrCreateProvider(testProviderConfig(), readyProvider())
+	require.NoError(t, err)
 	handler := h.Handler()
 	first := &task.Task{Name: "first", Output: &schema.Output{}}
 	require.False(t, handler.Router().Insert("/task", first))
@@ -253,11 +308,12 @@ func TestHandlerRoutes(t *testing.T) {
 
 // Verifies the handler can be mounted directly on a standard-library HTTP mux.
 func TestHandlerServeMux(t *testing.T) {
-	h := horizon.New(testFactory(func(context.Context) (task.Runner, error) {
-		return &mock.Runner{}, nil
+	h := newTestHorizon(t, testFactory(func(context.Context) (task.Runner, error) {
+		return noopRunner(), nil
 	}))
 	config := testProviderConfig()
-	require.NoError(t, h.AddProviderInstance(config, providermock.New(testProviderID)))
+	_, err := h.GetOrCreateProvider(config, readyProvider())
+	require.NoError(t, err)
 	h.Handler().Router().Insert("/task", &task.Task{
 		Provider: &config,
 		Output:   &schema.Output{},
@@ -274,16 +330,17 @@ func TestHandlerServeMux(t *testing.T) {
 func TestHandlerConcurrent(t *testing.T) {
 	const requests = 12
 	var created atomic.Int64
-	h := horizon.New(testFactory(func(context.Context) (task.Runner, error) {
+	h := newTestHorizon(t, testFactory(func(context.Context) (task.Runner, error) {
 		id := created.Add(1)
 		runner := selectedRunner()
-		runner.OnFinalize = func(_ context.Context, output *task.Output) error {
+		runner.OnFinalize = func(_ context.Context, output *task.Output, _ error) error {
 			output.Output = id
 			return nil
 		}
 		return runner, nil
 	}))
-	require.NoError(t, h.AddProviderInstance(testProviderConfig(), providermock.New(testProviderID)))
+	_, err := h.GetOrCreateProvider(testProviderConfig(), readyProvider())
+	require.NoError(t, err)
 	handler := h.Handler()
 	first := &task.Task{Output: &schema.Output{}}
 	second := &task.Task{Name: "replacement", Output: &schema.Output{}}

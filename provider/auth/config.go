@@ -26,25 +26,21 @@ type CredentialsConfig struct {
 
 func (c *CredentialsConfig) Credentials() *Credentials {
 	authType, _ := ParseType(c.Type)
-	creds := &Credentials{
-		wire: credswire{
-			Type:         authType,
-			APIKey:       c.APIKey,
-			Organization: c.Organization,
-			Project:      c.Project,
-			Token:        c.Token,
-			Username:     c.Username,
-			Password:     c.Password,
-			ClientID:     c.ClientID,
-			ClientSecret: c.ClientSecret,
-			AccessToken:  c.AccessToken,
-			RefreshToken: c.RefreshToken,
-			TokenType:    c.TokenType,
-			Expiry:       c.Expiry,
-		},
-	}
-	creds.Normalize()
-	return creds
+	return newCredentials(credswire{
+		Type:         authType,
+		APIKey:       c.APIKey,
+		Organization: c.Organization,
+		Project:      c.Project,
+		Token:        c.Token,
+		Username:     c.Username,
+		Password:     c.Password,
+		ClientID:     c.ClientID,
+		ClientSecret: c.ClientSecret,
+		AccessToken:  c.AccessToken,
+		RefreshToken: c.RefreshToken,
+		TokenType:    c.TokenType,
+		Expiry:       c.Expiry,
+	})
 }
 
 // Returns confire validation errors for configuration via the environment.

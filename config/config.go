@@ -10,22 +10,16 @@ import (
 // Prefix sets the prefix for Horizon environment variables.
 const Prefix = "horizon"
 
-// DefaultMaxToolTurns bounds the number of model/tool exchanges in one run.
-const DefaultMaxToolTurns = 32
-
-const (
-	// DefaultAttachmentMaxDownloadBytes limits remote attachment downloads to 64 MiB.
-	DefaultAttachmentMaxDownloadBytes int64 = 64 << 20
-	// DefaultAttachmentDownloadTimeout limits remote attachment downloads to 16 seconds.
-	DefaultAttachmentDownloadTimeout = 16 * time.Second
-)
-
 // Config contains Horizon execution and rendering settings.
 type Config struct {
 	RendererCacheSize          int           `split_words:"true" default:"128" desc:"the size of the renderer cache"`
 	MaxToolTurns               int64         `split_words:"true" default:"32" desc:"the maximum number of model/tool turns; 0 disables tool calling"`
 	AttachmentMaxDownloadBytes int64         `split_words:"true" default:"67108864" desc:"the maximum number of bytes to download for an attachment (default 64mb)"`
-	AttachmentDownloadTimeout  time.Duration `split_words:"true" default:"16s" desc:"the maximum duration of a remote attachment download"`
+	AttachmentDownloadTimeout  time.Duration `split_words:"true" default:"8s" desc:"the maximum duration of a remote attachment download"`
+	ExecutionTimeout           time.Duration `split_words:"true" default:"0s" desc:"the maximum duration of one execution; 0 uses only the caller context"`
+	FinalizeTimeout            time.Duration `split_words:"true" default:"8s" desc:"the maximum duration allowed for runner finalization"`
+	ProviderRequestTimeout     time.Duration `split_words:"true" default:"128s" desc:"the maximum duration of an individual inference request"`
+	HTTPClientTimeout          time.Duration `split_words:"true" default:"768s" desc:"the maximum duration of generic Horizon HTTP requests"`
 }
 
 func New() (conf *Config, err error) {
@@ -48,6 +42,18 @@ func (c Config) Validate() (err error) {
 	}
 	if c.AttachmentDownloadTimeout <= 0 {
 		err = confire.Join(err, confire.Invalid("horizon", "attachmentDownloadTimeout", "must be greater than 0"))
+	}
+	if c.ExecutionTimeout < 0 {
+		err = confire.Join(err, confire.Invalid("horizon", "executionTimeout", "must not be negative"))
+	}
+	if c.FinalizeTimeout <= 0 {
+		err = confire.Join(err, confire.Invalid("horizon", "finalizeTimeout", "must be greater than 0"))
+	}
+	if c.ProviderRequestTimeout <= 0 {
+		err = confire.Join(err, confire.Invalid("horizon", "providerRequestTimeout", "must be greater than 0"))
+	}
+	if c.HTTPClientTimeout <= 0 {
+		err = confire.Join(err, confire.Invalid("horizon", "httpClientTimeout", "must be greater than 0"))
 	}
 	return err
 }

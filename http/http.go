@@ -6,8 +6,8 @@ import (
 	"io"
 	stdhttp "net/http"
 	"strings"
-	"time"
 
+	"go.rtnl.ai/horizon/config"
 	"go.rtnl.ai/horizon/errors"
 	"go.rtnl.ai/horizon/provider/auth"
 	"go.rtnl.ai/horizon/version"
@@ -22,19 +22,17 @@ var (
 	DefaultClient         = New()
 )
 
-// MaximumRequestTimeout prevents requests without a caller-provided context
-// from blocking forever.
-const MaximumRequestTimeout = 768 * time.Second
-
 // A JSON object is a map of string keys to any values.
 type JSON map[string]any
 
-// Returns Horizon's default HTTP client.
+// New returns a fresh HTTP client using the configured HTTP timeout.
 func New() *stdhttp.Client {
-	return &stdhttp.Client{
-		Transport: stdhttp.DefaultTransport,
-		Timeout:   MaximumRequestTimeout,
+	conf, err := config.Get()
+	client := &stdhttp.Client{Transport: stdhttp.DefaultTransport}
+	if err == nil {
+		client.Timeout = conf.HTTPClientTimeout
 	}
+	return client
 }
 
 // GetOptions controls optional client and response handling for a GET request.

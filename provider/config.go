@@ -6,15 +6,12 @@ import (
 	"fmt"
 	"net/url"
 	"slices"
-	"time"
 
 	"go.rtnl.ai/horizon/errors"
 	"go.rtnl.ai/horizon/provider/auth"
 	"go.rtnl.ai/ulid"
 	"go.rtnl.ai/x/validation"
 )
-
-const DefaultRequestTimeout = 128 * time.Second
 
 // The configuration for building a Horizon [Provider].
 type Config struct {

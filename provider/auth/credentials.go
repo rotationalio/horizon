@@ -27,67 +27,72 @@ var _ RequestCredential = (*Credentials)(nil)
 
 // None returns [Credentials] for no authentication.
 func NewNone() *Credentials {
-	return &Credentials{wire: credswire{
-		Type: TypeNone,
-	}}
+	return newCredentials(credswire{Type: TypeNone})
 }
 
 // APIKey returns [Credentials] for API key
 func NewAPIKey(apiKey string) *Credentials {
-	return &Credentials{wire: credswire{
+	return newCredentials(credswire{
 		Type:   TypeAPIKey,
 		APIKey: apiKey,
-	}}
+	})
 }
 
 // Token returns [Credentials] for bearer token
 func NewToken(token string) *Credentials {
-	return &Credentials{wire: credswire{
+	return newCredentials(credswire{
 		Type:  TypeToken,
 		Token: token,
-	}}
+	})
 }
 
 // Basic returns [Credentials] for HTTP basic
 func NewBasic(username, password string) *Credentials {
-	return &Credentials{wire: credswire{
+	return newCredentials(credswire{
 		Type:     TypeBasic,
 		Username: username,
 		Password: password,
-	}}
+	})
 }
 
 // OAuth2Client returns [Credentials] for OAuth2 client credentials.
 func NewOAuth2Client(clientID, clientSecret string) *Credentials {
-	return &Credentials{wire: credswire{
+	return newCredentials(credswire{
 		Type:         TypeOAuth2Client,
 		ClientID:     clientID,
 		ClientSecret: clientSecret,
-	}}
+	})
 }
 
 // OAuth2Token returns [Credentials] for a complete OAuth2 token.
 func NewOAuth2Token(token *oauth2.Token) *Credentials {
 	if token == nil {
-		return &Credentials{}
+		return newCredentials(credswire{})
 	}
-	return &Credentials{wire: credswire{
+	return newCredentials(credswire{
 		Type:         TypeOAuth2Token,
 		AccessToken:  token.AccessToken,
 		RefreshToken: token.RefreshToken,
 		TokenType:    token.TokenType,
 		Expiry:       token.Expiry,
-	}}
+	})
 }
 
 // OpenAIOrganization returns [Credentials] for OpenAI organization/project
 func NewOpenAIOrganization(apiKey, organization, project string) *Credentials {
-	return &Credentials{wire: credswire{
+	return newCredentials(credswire{
 		Type:         TypeOpenAIOrganization,
 		APIKey:       apiKey,
 		Organization: organization,
 		Project:      project,
-	}}
+	})
+}
+
+// Helper for ensuring credentials are normalized after construction.
+func newCredentials(wire credswire) *Credentials {
+	credentials := &Credentials{wire: wire}
+	credentials.Normalize()
+	return credentials
 }
 
 //=============================================================================
@@ -110,7 +115,11 @@ func (c *Credentials) UnmarshalJSON(data []byte) error {
 		*c = Credentials{}
 		return nil
 	}
-	return json.Unmarshal(data, &c.wire)
+	if err := json.Unmarshal(data, &c.wire); err != nil {
+		return err
+	}
+	c.Normalize()
+	return nil
 }
 
 // MarshalYAML implements yaml.Marshaler.
@@ -123,7 +132,11 @@ func (c *Credentials) MarshalYAML() (any, error) {
 
 // UnmarshalYAML implements yaml.Unmarshaler.
 func (c *Credentials) UnmarshalYAML(value *yaml.Node) error {
-	return value.Decode(&c.wire)
+	if err := value.Decode(&c.wire); err != nil {
+		return err
+	}
+	c.Normalize()
+	return nil
 }
 
 //=============================================================================
@@ -177,9 +190,13 @@ func (c *Credentials) ValidateFor(field string) (err error) {
 		return validation.Error(err, validation.MissingField(field))
 	}
 
-	c.Normalize()
+	normalized := *c
+	normalized.Normalize()
+	if normalized.wire != c.wire {
+		return validation.Error(err, validation.IncorrectField("normalization", "credential values must be normalized"))
+	}
 
-	w := &c.wire
+	w := &normalized.wire
 
 	switch w.Type {
 	case TypeNone:
@@ -306,7 +323,6 @@ func (c *Credentials) Set(req *http.Request) error {
 
 // Zero returns true if the normalized Credentials are empty.
 func (c *Credentials) Zero() bool {
-	c.Normalize()
 	w := &c.wire
 	return w.Type == TypeUnknown &&
 		w.APIKey == "" &&

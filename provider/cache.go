@@ -3,6 +3,7 @@ package provider
 import (
 	"crypto/sha256"
 	"fmt"
+	stdhttp "net/http"
 	"sync"
 
 	"go.rtnl.ai/horizon/errors"
@@ -12,8 +13,9 @@ import (
 // Cache stores configured provider instances for an application.
 // Construct caches with [NewCache].
 type Cache struct {
-	mu        sync.RWMutex
-	providers map[ulid.ULID]cachedProvider
+	mu         sync.RWMutex
+	providers  map[ulid.ULID]cachedProvider
+	httpClient *stdhttp.Client
 }
 
 type cachedProvider struct {
@@ -21,29 +23,18 @@ type cachedProvider struct {
 	fingerprint [sha256.Size]byte
 }
 
-// NewCache creates an empty provider cache.
+// NewCache creates an empty provider cache that uses provider implementations' default HTTP clients.
 func NewCache() *Cache {
-	return &Cache{providers: make(map[ulid.ULID]cachedProvider)}
+	return NewCacheWithHTTPClient(nil)
 }
 
-// Add constructs and caches the provider configured by config. Adding the same
-// ID and configuration reuses the existing instance. A changed configuration
-// replaces it for future lookups.
-func (c *Cache) Add(config Config) error {
-	_, err := c.GetOrCreate(config, nil)
-	return err
-}
-
-// AddInstance caches an existing provider with its configuration, replacing any
-// instance under config.ID. IDs must match; the caller is responsible for ensuring
-// the configuration's settings and credentials describe the supplied instance.
-// Typed-nil providers must not be supplied.
-func (c *Cache) AddInstance(config Config, instance Provider) error {
-	if instance == nil {
-		return errors.ErrProviderRequired
+// NewCacheWithHTTPClient creates an empty provider cache that passes client to
+// constructed providers. A nil client lets each provider use its default client.
+func NewCacheWithHTTPClient(client *stdhttp.Client) *Cache {
+	return &Cache{
+		providers:  make(map[ulid.ULID]cachedProvider),
+		httpClient: client,
 	}
-	_, err := c.GetOrCreate(config, instance)
-	return err
 }
 
 // GetOrCreate returns the instance matching config, constructing and caching it
@@ -82,7 +73,7 @@ func (c *Cache) GetOrCreate(config Config, instance Provider) (Provider, error) 
 			// Double-checked locking in case we lost a race; cached instance matches, no need to replace.
 			return cached.instance, nil
 		}
-		if instance, err = New(config); err != nil {
+		if instance, err = NewWithHTTPClient(config, c.httpClient); err != nil {
 			return nil, err
 		}
 	}

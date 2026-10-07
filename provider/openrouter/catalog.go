@@ -4,6 +4,7 @@ import (
 	"context"
 	"encoding/json"
 	"fmt"
+	stdhttp "net/http"
 	"net/url"
 	"strconv"
 	"strings"
@@ -34,8 +35,13 @@ type CatalogClient struct {
 	modelEndpoint *http.Endpoint
 }
 
-// NewCatalog creates an OpenRouter catalog client.
+// NewCatalog creates an OpenRouter catalog client using Horizon's default HTTP client.
 func NewCatalog(conf provider.Config) (*CatalogClient, error) {
+	return NewCatalogWithHTTPClient(conf, nil)
+}
+
+// NewCatalogWithHTTPClient creates an OpenRouter catalog client using client.
+func NewCatalogWithHTTPClient(conf provider.Config, client *stdhttp.Client) (*CatalogClient, error) {
 	listURL, err := catalogEndpointWithAllModalities(conf.CatalogEndpoint)
 	if err != nil {
 		return nil, err
@@ -45,11 +51,11 @@ func NewCatalog(conf provider.Config) (*CatalogClient, error) {
 		return nil, err
 	}
 
-	endpoint, err := http.NewEndpoint(listURL, nil, conf.Credentials)
+	endpoint, err := http.NewEndpoint(listURL, client, conf.Credentials)
 	if err != nil {
 		return nil, err
 	}
-	modelEndpoint, err := http.NewEndpoint(modelURL, nil, conf.Credentials)
+	modelEndpoint, err := http.NewEndpoint(modelURL, client, conf.Credentials)
 	if err != nil {
 		return nil, err
 	}

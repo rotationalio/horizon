@@ -2,6 +2,8 @@ package task
 
 import (
 	"context"
+	"io"
+	"iter"
 
 	"go.rtnl.ai/horizon/attachments"
 	"go.rtnl.ai/horizon/capabilities"
@@ -76,4 +78,36 @@ type InputGuard interface {
 // calls or other intermediate responses.
 type OutputGuard interface {
 	ProtectOutput(*provider.Response) error
+}
+
+//============================================================================
+// Import/Export Interface Definition
+//============================================================================
+
+// Exporter is used to load tasks from a source such as a file or a database.
+type Exporter interface {
+	io.Closer
+	Tasks() iter.Seq[*Task]
+	Err() error
+}
+
+// Importer is used to save tasks into a destination such as a file or a database.
+type Importer interface {
+	io.Closer
+	Task(...*Task) error
+}
+
+//============================================================================
+// Import/Export Implementation
+//============================================================================
+
+// Transfer the tasks from the source importer to the destination exporter.
+func Transfer(src Exporter, dst Importer) error {
+	for task := range src.Tasks() {
+		if err := dst.Task(task); err != nil {
+			return err
+		}
+	}
+
+	return src.Err()
 }

@@ -42,6 +42,7 @@ func TestMaxToolTurnsConfiguration(t *testing.T) {
 
 // Uses documented defaults when unset and parses explicit byte and duration overrides.
 func TestAttachmentDownloadConfigDefaultsAndOverrides(t *testing.T) {
+	clearEnv(t, "HORIZON_PROVIDER_CACHE_SIZE")
 	clearEnv(t, "HORIZON_ATTACHMENT_MAX_DOWNLOAD_BYTES")
 	clearEnv(t, "HORIZON_ATTACHMENT_DOWNLOAD_TIMEOUT")
 	clearEnv(t, "HORIZON_EXECUTION_TIMEOUT")
@@ -51,6 +52,7 @@ func TestAttachmentDownloadConfigDefaultsAndOverrides(t *testing.T) {
 
 	conf, err := config.New()
 	require.NoError(t, err)
+	require.Equal(t, 32, conf.ProviderCacheSize)
 	require.EqualValues(t, 64<<20, conf.AttachmentMaxDownloadBytes)
 	require.Equal(t, 8*time.Second, conf.AttachmentDownloadTimeout)
 	require.Zero(t, conf.ExecutionTimeout)
@@ -58,6 +60,7 @@ func TestAttachmentDownloadConfigDefaultsAndOverrides(t *testing.T) {
 	require.Equal(t, 128*time.Second, conf.ProviderRequestTimeout)
 	require.Equal(t, 768*time.Second, conf.HTTPClientTimeout)
 
+	t.Setenv("HORIZON_PROVIDER_CACHE_SIZE", "64")
 	t.Setenv("HORIZON_ATTACHMENT_MAX_DOWNLOAD_BYTES", "1048576")
 	t.Setenv("HORIZON_ATTACHMENT_DOWNLOAD_TIMEOUT", "500ms")
 	t.Setenv("HORIZON_EXECUTION_TIMEOUT", "2m")
@@ -66,6 +69,7 @@ func TestAttachmentDownloadConfigDefaultsAndOverrides(t *testing.T) {
 	t.Setenv("HORIZON_HTTP_CLIENT_TIMEOUT", "5m")
 	conf, err = config.New()
 	require.NoError(t, err)
+	require.Equal(t, 64, conf.ProviderCacheSize)
 	require.EqualValues(t, 1048576, conf.AttachmentMaxDownloadBytes)
 	require.Equal(t, 500*time.Millisecond, conf.AttachmentDownloadTimeout)
 	require.Equal(t, 2*time.Minute, conf.ExecutionTimeout)
@@ -80,6 +84,8 @@ func TestAttachmentDownloadConfigRejectsInvalidValues(t *testing.T) {
 		key   string
 		value string
 	}{
+		{key: "HORIZON_PROVIDER_CACHE_SIZE", value: "0"},
+		{key: "HORIZON_PROVIDER_CACHE_SIZE", value: "-1"},
 		{key: "HORIZON_ATTACHMENT_MAX_DOWNLOAD_BYTES", value: "0"},
 		{key: "HORIZON_ATTACHMENT_MAX_DOWNLOAD_BYTES", value: "-1"},
 		{key: "HORIZON_ATTACHMENT_DOWNLOAD_TIMEOUT", value: "0s"},

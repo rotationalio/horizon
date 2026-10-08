@@ -13,8 +13,9 @@ const Prefix = "horizon"
 // Config contains Horizon execution and rendering settings.
 type Config struct {
 	RendererCacheSize          int           `split_words:"true" default:"128" desc:"the size of the renderer cache"`
+	ProviderCacheSize          int           `split_words:"true" default:"32" desc:"the maximum number of provider instances to cache"`
 	MaxToolTurns               int64         `split_words:"true" default:"32" desc:"the maximum number of model/tool turns; 0 disables tool calling"`
-	AttachmentMaxDownloadBytes int64         `split_words:"true" default:"67108864" desc:"the maximum number of bytes to download for an attachment (default 64mb)"`
+	AttachmentMaxDownloadBytes int64         `split_words:"true" default:"67108864" desc:"the maximum number of bytes to download for an attachment in bytes (default 64mb)"`
 	AttachmentDownloadTimeout  time.Duration `split_words:"true" default:"8s" desc:"the maximum duration of a remote attachment download"`
 	ExecutionTimeout           time.Duration `split_words:"true" default:"0s" desc:"the maximum duration of one execution; 0 uses only the caller context"`
 	FinalizeTimeout            time.Duration `split_words:"true" default:"8s" desc:"the maximum duration allowed for runner finalization"`
@@ -33,6 +34,9 @@ func New() (conf *Config, err error) {
 func (c Config) Validate() (err error) {
 	if c.RendererCacheSize < 1 {
 		err = confire.Join(err, confire.Invalid("horizon", "rendererCacheSize", "must be greater than 0"))
+	}
+	if c.ProviderCacheSize < 1 {
+		err = confire.Join(err, confire.Invalid("horizon", "providerCacheSize", "must be greater than 0"))
 	}
 	if c.MaxToolTurns < 0 {
 		err = confire.Join(err, confire.Invalid("horizon", "maxToolTurns", "must not be negative"))

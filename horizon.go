@@ -41,8 +41,13 @@ func New(factory RunnerFactory) (*Horizon, error) {
 	client := http.New()
 	client.Timeout = conf.HTTPClientTimeout
 
+	providers, err := provider.NewCacheWithHTTPClient(client)
+	if err != nil {
+		return nil, fmt.Errorf("create provider cache: %w", err)
+	}
+
 	h := &Horizon{
-		providers:  provider.NewCacheWithHTTPClient(client),
+		providers:  providers,
 		factory:    factory,
 		config:     conf,
 		httpClient: client,

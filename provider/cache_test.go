@@ -5,6 +5,7 @@ import (
 	"testing"
 
 	"github.com/stretchr/testify/require"
+	"go.rtnl.ai/horizon/config"
 	"go.rtnl.ai/horizon/errors"
 	"go.rtnl.ai/horizon/provider"
 	"go.rtnl.ai/horizon/provider/auth"
@@ -16,7 +17,7 @@ import (
 // Verifies unchanged configuration is reused and changed configuration replaces
 // the cached provider.
 func TestProviderCacheGetOrCreate(t *testing.T) {
-	cache := provider.NewCache()
+	cache := newProviderCache(t)
 	config := mockProviderConfig(providerTestID)
 
 	first, err := cache.GetOrCreate(config, nil)
@@ -47,7 +48,7 @@ func TestProviderCacheGetOrCreate(t *testing.T) {
 // Verifies supplied instances are cached, reused for nil-instance lookups, and
 // unconditionally replace a different cached instance under the same ID.
 func TestProviderCacheGetOrCreateWithInstance(t *testing.T) {
-	cache := provider.NewCache()
+	cache := newProviderCache(t)
 	config := mockProviderConfig(providerTestID)
 	first := mock.New(config.ID)
 
@@ -72,7 +73,7 @@ func TestProviderCacheGetOrCreateWithInstance(t *testing.T) {
 // Verifies simultaneous lookups for equivalent configuration share one instance.
 func TestProviderCacheGetOrCreateConcurrent(t *testing.T) {
 	const lookups = 16
-	cache := provider.NewCache()
+	cache := newProviderCache(t)
 	start := make(chan struct{})
 	results := make(chan struct {
 		instance provider.Provider
@@ -107,7 +108,7 @@ func TestProviderCacheGetOrCreateConcurrent(t *testing.T) {
 // the current cached provider.
 func TestProviderCacheRejectsInvalidEntries(t *testing.T) {
 	t.Run("invalid config is validated before the supplied instance", func(t *testing.T) {
-		cache := provider.NewCache()
+		cache := newProviderCache(t)
 		config := mockProviderConfig(ulid.ULID{})
 
 		_, err := cache.GetOrCreate(config, nil)
@@ -117,7 +118,7 @@ func TestProviderCacheRejectsInvalidEntries(t *testing.T) {
 	})
 
 	t.Run("provider ID must match config ID", func(t *testing.T) {
-		cache := provider.NewCache()
+		cache := newProviderCache(t)
 		config := mockProviderConfig(providerTestID)
 
 		_, err := cache.GetOrCreate(config, mock.New(ulid.Make()))
@@ -130,7 +131,7 @@ func TestProviderCacheRejectsInvalidEntries(t *testing.T) {
 	})
 
 	t.Run("failed update preserves existing provider", func(t *testing.T) {
-		cache := provider.NewCache()
+		cache := newProviderCache(t)
 		config := mockProviderConfig(providerTestID)
 		instance := mock.New(config.ID)
 		_, err := cache.GetOrCreate(config, instance)
@@ -148,15 +149,46 @@ func TestProviderCacheRejectsInvalidEntries(t *testing.T) {
 	})
 
 	t.Run("zero lookup ID is rejected", func(t *testing.T) {
-		_, err := provider.NewCache().Get(ulid.ULID{})
+		_, err := newProviderCache(t).Get(ulid.ULID{})
 		require.ErrorIs(t, err, errors.ErrProviderIDRequired)
 	})
 }
 
 // Verifies removing an entry leaves acquired instances usable and allows later
 // re-creation.
+func TestProviderCacheEvictsLeastRecentlyUsed(t *testing.T) {
+	conf, err := config.Get()
+	require.NoError(t, err)
+	conf.ProviderCacheSize = 2
+	require.NoError(t, config.Set(conf))
+	t.Cleanup(config.Reset)
+	cache := newProviderCache(t)
+
+	firstConfig := mockProviderConfig(ulid.Make())
+	secondConfig := mockProviderConfig(ulid.Make())
+	thirdConfig := mockProviderConfig(ulid.Make())
+	first, err := cache.GetOrCreate(firstConfig, nil)
+	require.NoError(t, err)
+	_, err = cache.GetOrCreate(secondConfig, nil)
+	require.NoError(t, err)
+
+	// Refresh the first entry so inserting the third evicts the second.
+	got, err := cache.Get(firstConfig.ID)
+	require.NoError(t, err)
+	require.Same(t, first, got)
+	_, err = cache.GetOrCreate(thirdConfig, nil)
+	require.NoError(t, err)
+
+	_, err = cache.Get(firstConfig.ID)
+	require.NoError(t, err)
+	_, err = cache.Get(secondConfig.ID)
+	require.ErrorIs(t, err, errors.ErrProviderNotFound)
+	_, err = cache.Get(thirdConfig.ID)
+	require.NoError(t, err)
+}
+
 func TestProviderCacheRemove(t *testing.T) {
-	cache := provider.NewCache()
+	cache := newProviderCache(t)
 	config := mockProviderConfig(providerTestID)
 	instance := mock.New(config.ID)
 	instance.OnGenerate = func(context.Context, *provider.Request) (*provider.Response, error) {
@@ -179,6 +211,13 @@ func TestProviderCacheRemove(t *testing.T) {
 	recreated, err := cache.GetOrCreate(config, nil)
 	require.NoError(t, err)
 	require.NotSame(t, instance, recreated)
+}
+
+func newProviderCache(t *testing.T) *provider.Cache {
+	t.Helper()
+	cache, err := provider.NewCache()
+	require.NoError(t, err)
+	return cache
 }
 
 func mockProviderConfig(id ulid.ULID) provider.Config {

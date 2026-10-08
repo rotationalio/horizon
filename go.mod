@@ -4,6 +4,7 @@ go 1.26.5
 
 require (
 	github.com/cespare/xxhash/v2 v2.3.0
+	github.com/hashicorp/golang-lru/v2 v2.0.7
 	github.com/joho/godotenv v1.5.1
 	github.com/openai/openai-go/v3 v3.66.0
 	github.com/stretchr/testify v1.12.1
@@ -14,6 +15,7 @@ require (
 	go.rtnl.ai/ulid v1.3.0
 	go.rtnl.ai/x v1.22.0
 	golang.org/x/oauth2 v0.37.0
+	golang.org/x/sync v0.23.0
 	gopkg.in/yaml.v3 v3.0.1
 )
 
@@ -32,7 +34,6 @@ require (
 	go.opentelemetry.io/otel/metric v1.47.0 // indirect
 	go.yaml.in/yaml/v3 v3.0.5 // indirect
 	golang.org/x/mod v0.41.0 // indirect
-	golang.org/x/sync v0.23.0 // indirect
 	golang.org/x/text v0.42.0 // indirect
 	golang.org/x/tools v0.49.0 // indirect
 )

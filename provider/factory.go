@@ -5,7 +5,6 @@ import (
 	"slices"
 	"sync"
 
-	"go.rtnl.ai/horizon/errors"
 	"go.rtnl.ai/horizon/provider/auth"
 )
 
@@ -64,10 +63,7 @@ func New(config Config) (Provider, error) {
 		return nil, err
 	}
 
-	registration, exists := LookupRegistration(config.ProviderType)
-	if !exists {
-		return nil, fmt.Errorf("%w: %s is not registered", errors.ErrUnsupportedProviderType, config.ProviderType)
-	}
+	registration, _ := LookupRegistration(config.ProviderType)
 	return registration.Factory(config)
 }
 

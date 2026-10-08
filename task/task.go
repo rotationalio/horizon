@@ -1,7 +1,7 @@
 package task
 
 import (
-	"context"
+	"slices"
 
 	"go.rtnl.ai/horizon/capabilities"
 	"go.rtnl.ai/horizon/params"
@@ -35,7 +35,6 @@ type Task struct {
 	Capabilities []capabilities.Name `json:"capabilities,omitempty" yaml:"capabilities,omitempty" msg:"capabilities,omitempty"` // The capabilities enabled for the task
 
 	// Task Execution Configuration
-	// Tools *config.Tools
 	Provider *provider.Config `json:"provider,omitempty" yaml:"provider,omitempty" msg:"provider,omitempty"` // The inference provider used for the task
 }
 
@@ -46,21 +45,42 @@ type Model struct {
 	Parameters *params.Params `json:"parameters,omitempty" yaml:"parameters,omitempty" msg:"parameters,omitempty"`
 }
 
-// Executes the task with the given input and runner, returning the result.
-func (t *Task) Run(ctx context.Context, input *Input, runner Runner) (output *Output, err error) {
-	return Run(ctx, input, t, runner)
-}
-
-//============================================================================
-// Internal Task Helper Functions
-//============================================================================
-
-// Creates a basic provider request from the task definition.
-func (t *Task) request() *provider.Request {
-	// TODO: Handle the tools definition.
-	return &provider.Request{
-		Model:        t.Model.Slug,
-		Params:       t.Model.Parameters,
-		OutputSchema: t.Output.Schema,
+// Clone copies a task's mutable configuration for an execution.
+func (t *Task) Clone() *Task {
+	if t == nil {
+		return nil
 	}
+	cloned := *t
+	cloned.Capabilities = slices.Clone(t.Capabilities)
+	cloned.Model.Parameters = t.Model.Parameters.Clone()
+	if t.Provider != nil {
+		config := *t.Provider
+		cloned.Provider = &config
+	}
+	if t.Input != nil {
+		input := *t.Input
+		cloned.Input = &input
+		if t.Input.Schema != nil {
+			schema := *t.Input.Schema
+			input.Schema = &schema
+		}
+	}
+	if t.Output != nil {
+		output := *t.Output
+		cloned.Output = &output
+		if t.Output.Schema != nil {
+			schema := *t.Output.Schema
+			output.Schema = &schema
+		}
+	}
+	if t.Prompts != nil {
+		cloned.Prompts = make(prompts.Templates, len(t.Prompts))
+		for i, template := range t.Prompts {
+			if template != nil {
+				copy := *template
+				cloned.Prompts[i] = &copy
+			}
+		}
+	}
+	return &cloned
 }

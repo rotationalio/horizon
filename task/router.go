@@ -4,16 +4,22 @@ import (
 	"errors"
 	"sort"
 	"strings"
+	"sync"
 )
 
 // Router is a space efficient radix tree used for assigning path components to tasks.
+// Routes can be read and edited concurrently. Stored tasks must not be mutated
+// while in use; replace a route to update its task definition.
 type Router struct {
+	mu   sync.RWMutex
 	root *node
 	size int
 }
 
 // Returns the number of elements in the router.
 func (r *Router) Size() int {
+	r.mu.RLock()
+	defer r.mu.RUnlock()
 	return r.size
 }
 
@@ -21,6 +27,9 @@ func (r *Router) Size() int {
 // NOTE: the path should be an absolute path with a leading `/` character. The path
 // should also be URL safe (e.g. url encoded) with no query string.
 func (r *Router) Insert(path string, task *Task) bool {
+	r.mu.Lock()
+	defer r.mu.Unlock()
+
 	// Prepare the router for the insert operation.
 	if r.root == nil {
 		r.root = &node{
@@ -123,6 +132,9 @@ func (r *Router) Insert(path string, task *Task) bool {
 
 // Get the task at the specified path. Returns the task and true if the task was found.
 func (r *Router) Get(path string) (*Task, bool) {
+	r.mu.RLock()
+	defer r.mu.RUnlock()
+
 	// Check if the router is empty.
 	if r.root == nil {
 		return nil, false
@@ -162,6 +174,9 @@ func (r *Router) Get(path string) (*Task, bool) {
 
 // Remove the task at the specified path. Returns true if a task was removed.
 func (r *Router) Remove(path string) bool {
+	r.mu.Lock()
+	defer r.mu.Unlock()
+
 	// Check if the router is empty.
 	if r.root == nil {
 		return false

@@ -32,19 +32,21 @@ var (
 	ErrUnsupportedCredentialType = errors.New("unsupported credential type for HTTP requests")
 
 	// Task-related errors
+	ErrRunnerRequired             = errors.New("runner is required")
 	ErrTaskArchiveBootstrapFailed = errors.New("horizon task archive bootstrap failed")
-	ErrTaskRequired               = errors.New("task is required")
 	ErrTaskModalitiesRequired     = errors.New("task modalities are required")
+	ErrTaskOutputRequired         = errors.New("task output is required")
+	ErrTaskRequired               = errors.New("task is required")
 
 	// Schema-related errors
 	ErrNoJSONSchema = errors.New("cannot derive JSON schema without schema data or URI")
 
-	// Configuration errors
-	ErrInvalidCredentials      = errors.New("invalid credentials")
-	ErrInvalidDefaultModel     = errors.New("invalid default model")
-	ErrInvalidID               = errors.New("invalid ID")
-	ErrUnsupportedAPIType      = errors.New("unsupported API type")
-	ErrUnsupportedProviderType = errors.New("unsupported provider type")
+	// Provider errors
+	ErrProviderIDMismatch = errors.New("provider ID does not match config ID")
+	ErrProviderIDRequired = errors.New("provider ID is required")
+	ErrProviderNotFound   = errors.New("provider not found")
+	ErrProviderRequired   = errors.New("provider is required")
+	ErrUnsupportedAPIType = errors.New("unsupported API type")
 
 	// General errors
 	ErrNotImplemented = errors.New("not implemented")

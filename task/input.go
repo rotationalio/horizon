@@ -4,6 +4,7 @@ import (
 	"bytes"
 	"fmt"
 	"io"
+	"maps"
 	"mime/multipart"
 	"net/url"
 
@@ -34,6 +35,28 @@ type Input struct {
 
 	// Any attachments from a multipart request that are attached to the input.
 	Attachments attachments.Attachments `json:"attachments,omitzero"`
+}
+
+// Clone copies the input context map and attachment data for an execution.
+// Nested context values remain shared and must be treated as read-only.
+// A nil input becomes an empty input.
+func (i *Input) Clone() *Input {
+	if i == nil {
+		return &Input{}
+	}
+	cloned := *i
+	cloned.Context = maps.Clone(i.Context)
+	if i.Attachments != nil {
+		cloned.Attachments = make(attachments.Attachments, len(i.Attachments))
+		for index, attachment := range i.Attachments {
+			if attachment != nil {
+				copy := *attachment
+				copy.Data = bytes.Clone(attachment.Data)
+				cloned.Attachments[index] = &copy
+			}
+		}
+	}
+	return &cloned
 }
 
 // Decode values from the URL.

@@ -1,37 +1,47 @@
-package task
+package horizon
 
 import (
 	"context"
+
 	"time"
 
 	"go.rtnl.ai/horizon/attachments"
+	"go.rtnl.ai/horizon/errors"
 	"go.rtnl.ai/horizon/prompts"
 	"go.rtnl.ai/horizon/provider"
+	"go.rtnl.ai/horizon/task"
 )
 
 // var tracer = otel.Tracer("go.rtnl.ai/horizon")
 
-// Executes the horizon task using the provided runner and input context.
-func Run(ctx context.Context, input *Input, task *Task, runner Runner) (output *Output, err error) {
-	proc := &process{
-		runner: runner,
-		task:   task,
-		input:  input,
-	}
-	return proc.Run(ctx)
-}
-
 // A horizon process executes a horizon task using a runner.
 type process struct {
-	runner  Runner
-	task    *Task
-	input   *Input
-	request *provider.Request
-	output  *Output
-	// response *provider.Response
+	horizon  *Horizon
+	runner   task.Runner
+	task     *task.Task
+	input    *task.Input
+	provider provider.Provider
+	request  *provider.Request
+	output   *task.Output
 }
 
-func (p *process) Run(ctx context.Context) (output *Output, err error) {
+func (p *process) Run(ctx context.Context) (output *task.Output, err error) {
+	if err := ctx.Err(); err != nil {
+		return nil, err
+	}
+	if p.task == nil {
+		return nil, errors.ErrTaskRequired
+	}
+	if p.runner == nil {
+		return nil, errors.ErrRunnerRequired
+	}
+	if p.task.Output == nil {
+		return nil, errors.ErrTaskOutputRequired
+	}
+
+	p.task = p.task.Clone()
+	p.input = p.input.Clone()
+
 	// Step 0: Prepare the runner for the task.
 	// At the end of the prepare step, the task should have a valid provider.
 	if err = p.Prepare(ctx); err != nil {
@@ -39,7 +49,7 @@ func (p *process) Run(ctx context.Context) (output *Output, err error) {
 	}
 
 	// Create the output object to start executing the task.
-	p.output = &Output{
+	p.output = &task.Output{
 		Started: time.Now(),
 	}
 
@@ -54,7 +64,14 @@ func (p *process) Run(ctx context.Context) (output *Output, err error) {
 	}
 
 	// Create the request object to start the generation/tool calling loop.
-	p.request = p.task.request()
+	if p.task.Output == nil {
+		return nil, errors.ErrTaskOutputRequired
+	}
+	p.request = &provider.Request{
+		Model:        p.task.Model.Slug,
+		Params:       p.task.Model.Parameters,
+		OutputSchema: p.task.Output.Schema,
+	}
 
 	// Step 2: Prepare attachments before creating an LLM request.
 	if err = p.ProcessAttachments(ctx); err != nil {
@@ -88,6 +105,16 @@ func (p *process) Prepare(ctx context.Context) error {
 
 		// TODO: System Prepare
 		// TODO: Validate that the provider can handle the task.
+		// One-off executions already have an explicitly supplied provider.
+		if p.provider != nil {
+			return nil
+		}
+		if p.task.Provider == nil {
+			return errors.ErrProviderRequired
+		}
+		if p.provider, err = p.horizon.providers.GetOrCreate(*p.task.Provider, nil); err != nil {
+			return err
+		}
 
 		return nil
 	})
@@ -95,11 +122,7 @@ func (p *process) Prepare(ctx context.Context) error {
 
 func (p *process) ProcessInput(ctx context.Context) error {
 	return cancel(ctx, func(ctx context.Context) (err error) {
-		if p.runner == nil {
-			return nil
-		}
-
-		if preprocessor, ok := p.runner.(InputProcessor); ok {
+		if preprocessor, ok := p.runner.(task.InputProcessor); ok {
 			if p.input, err = preprocessor.ProcessInput(p.input); err != nil {
 				return err
 			}
@@ -110,11 +133,7 @@ func (p *process) ProcessInput(ctx context.Context) error {
 
 func (p *process) ProcessContext(ctx context.Context) error {
 	return cancel(ctx, func(ctx context.Context) (err error) {
-		if p.runner == nil {
-			return nil
-		}
-
-		if preprocessor, ok := p.runner.(ContextProcessor); ok {
+		if preprocessor, ok := p.runner.(task.ContextProcessor); ok {
 			if p.input.Context, err = preprocessor.ProcessContext(p.input.Context); err != nil {
 				return err
 			}
@@ -125,16 +144,14 @@ func (p *process) ProcessContext(ctx context.Context) error {
 
 func (p *process) ProcessAttachments(ctx context.Context) error {
 	return cancel(ctx, func(ctx context.Context) (err error) {
-		if p.runner != nil {
-			if preprocessor, ok := p.runner.(AttachmentProcessor); ok {
-				p.request.Attachments = make(attachments.Attachments, len(p.input.Attachments))
-				for i, attachment := range p.input.Attachments {
-					if p.request.Attachments[i], err = preprocessor.ProcessAttachment(attachment); err != nil {
-						return err
-					}
+		if preprocessor, ok := p.runner.(task.AttachmentProcessor); ok {
+			p.request.Attachments = make(attachments.Attachments, len(p.input.Attachments))
+			for i, attachment := range p.input.Attachments {
+				if p.request.Attachments[i], err = preprocessor.ProcessAttachment(attachment); err != nil {
+					return err
 				}
-				return nil
 			}
+			return nil
 		}
 
 		// Otherwise just use the attachments as defined in the input.
@@ -145,13 +162,11 @@ func (p *process) ProcessAttachments(ctx context.Context) error {
 
 func (p *process) Render(ctx context.Context) error {
 	return cancel(ctx, func(ctx context.Context) (err error) {
-		if p.runner != nil {
-			if renderer, ok := p.runner.(Renderer); ok {
-				if p.request.Input, err = renderer.Render(p.task.Prompts, p.input.Context); err != nil {
-					return err
-				}
-				return nil
+		if renderer, ok := p.runner.(task.Renderer); ok {
+			if p.request.Input, err = renderer.Render(p.task.Prompts, p.input.Context); err != nil {
+				return err
 			}
+			return nil
 		}
 
 		// Use the default renderer to render the prompts.
@@ -171,10 +186,6 @@ func (p *process) Generate(ctx context.Context) error {
 
 func (p *process) Finalize(ctx context.Context) error {
 	return cancel(ctx, func(ctx context.Context) (err error) {
-		if p.runner == nil {
-			return nil
-		}
-
 		if err = p.runner.Finalize(ctx, p.output); err != nil {
 			return err
 		}

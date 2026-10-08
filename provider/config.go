@@ -1,6 +1,8 @@
 package provider
 
 import (
+	"crypto/sha256"
+	"encoding/json"
 	"fmt"
 	"net/url"
 	"slices"
@@ -8,12 +10,16 @@ import (
 
 	"go.rtnl.ai/horizon/errors"
 	"go.rtnl.ai/horizon/provider/auth"
+	"go.rtnl.ai/ulid"
+	"go.rtnl.ai/x/validation"
 )
 
 const DefaultRequestTimeout = 128 * time.Second
 
 // The configuration for building a Horizon [Provider].
 type Config struct {
+	// The application-assigned ID used to identify this provider.
+	ID ulid.ULID `json:"id" yaml:"id" msg:"id"`
 	// The API type that this provider uses (ex: "chat_completions", "requests")
 	APIType APIType `json:"api_type" yaml:"api_type" msg:"api_type"`
 	// The base endpoint URL for the provider's inference API.
@@ -26,39 +32,54 @@ type Config struct {
 	// as connectivity checks and catalog refreshing.
 	DefaultModel string `json:"default_model" yaml:"default_model" msg:"default_model"`
 	// The credentials to use when connecting to this provider.
-	Credentials auth.RequestCredential `json:"credentials,omitempty" yaml:"credentials,omitempty" msg:"credentials,omitempty"`
+	Credentials *auth.Credentials `json:"credentials,omitempty" yaml:"credentials,omitempty" msg:"credentials,omitempty"`
 
 	inference *url.URL
 	catalog   *url.URL
 }
 
+// Hash fingerprints all configuration fields, including credentials.
+// Hash values must not be logged or exposed alongside credential data.
+func (p Config) Hash() ([sha256.Size]byte, error) {
+	data, err := json.Marshal(p)
+	if err != nil {
+		return [sha256.Size]byte{}, err
+	}
+	return sha256.Sum256(data), nil
+}
+
 func (p *Config) Validate() (err error) {
 	if p == nil {
-		return errors.ErrUnsupportedProviderType
+		return validation.Error(nil, validation.Missing("provider"))
+	}
+	var causes []error
+	if p.ID == (ulid.ULID{}) {
+		err = validation.Error(err, validation.Missing("id"))
+
 	}
 
-	if p.APIType == APITypeUnknown {
-		return errors.ErrUnsupportedAPIType
-	}
-
-	if p.ProviderType == ProviderTypeUnknown {
-		return errors.ErrUnsupportedProviderType
-	}
 	registration, exists := LookupRegistration(p.ProviderType)
-	if !exists {
-		return errors.Join(errors.ErrUnsupportedProviderType, errors.Fmt("%s is not registered", p.ProviderType))
+	if p.ProviderType == ProviderTypeUnknown {
+		err = validation.Error(err, validation.Missing("provider_type"))
+	} else if !exists {
+		err = validation.Error(err, validation.Incorrect("provider_type", "is not registered"))
 	}
-	if !slices.Contains(registration.APITypes, p.APIType) {
-		return errors.Join(errors.ErrUnsupportedAPIType, errors.Fmt("%s does not support %s", p.ProviderType, p.APIType))
+	if p.APIType == APITypeUnknown {
+		err = validation.Error(err, validation.Missing("api_type"))
+	} else if exists && !slices.Contains(registration.APITypes, p.APIType) {
+		err = validation.Error(err, validation.Incorrect("api_type", fmt.Sprintf("%s does not support %s", p.ProviderType, p.APIType)))
 	}
 
 	// Mock providers do not make network requests and therefore need no endpoints.
 	if p.ProviderType != ProviderTypeMock {
-		if p.inference, err = parseEndpoint(p.InferenceEndpoint); err != nil {
-			return errors.Join(errors.ErrInvalidInferenceEndpoint, err)
+		var endpointErr error
+		if p.inference, endpointErr = parseEndpoint(p.InferenceEndpoint); endpointErr != nil {
+			err = validation.Error(err, validation.Incorrect("inference_endpoint", endpointErr.Error()))
+			causes = append(causes, endpointErr)
 		}
-		if p.catalog, err = parseEndpoint(p.CatalogEndpoint); err != nil {
-			return errors.Join(errors.ErrInvalidCatalogEndpoint, err)
+		if p.catalog, endpointErr = parseEndpoint(p.CatalogEndpoint); endpointErr != nil {
+			err = validation.Error(err, validation.Incorrect("catalog_endpoint", endpointErr.Error()))
+			causes = append(causes, endpointErr)
 		}
 	}
 
@@ -66,22 +87,22 @@ func (p *Config) Validate() (err error) {
 	// provider types have preferred default models in their packages, so this
 	// is optional for them.
 	if p.ProviderType == ProviderTypeOpenAICompatible && p.DefaultModel == "" {
-		return errors.ErrInvalidDefaultModel
+		err = validation.Error(err, validation.Missing("default_model"))
+
 	}
 
-	// Require credentials is not unknown and is valid. Use can still provide
+	// Require credentials is not unknown and is valid. Users can still provide
 	// the [auth.TypeNone] credential for "no auth".
 	if p.Credentials == nil || p.Credentials.Type() == auth.TypeUnknown {
-		return errors.ErrInvalidCredentials
-	}
-	if err = p.Credentials.Validate(); err != nil {
-		return errors.Join(errors.ErrInvalidCredentials, err)
-	}
-	if !slices.Contains(registration.AuthTypes, p.Credentials.Type()) {
-		return errors.Join(errors.ErrInvalidCredentials, errors.Fmt("%s does not support %s credentials", p.ProviderType, p.Credentials.Type()))
+		err = validation.Error(err, validation.Missing("credentials"))
+	} else if credentialErr := p.Credentials.Validate(); credentialErr != nil {
+		err = validation.SubfieldError(err, credentialErr, "credentials")
+		causes = append(causes, credentialErr)
+	} else if exists && !slices.Contains(registration.AuthTypes, p.Credentials.Type()) {
+		err = validation.Error(err, validation.Incorrect("credentials", fmt.Sprintf("%s does not support %s credentials", p.ProviderType, p.Credentials.Type())))
 	}
 
-	return nil
+	return errors.Join(err, errors.Join(causes...))
 }
 
 func parseEndpoint(raw string) (*url.URL, error) {
@@ -129,7 +150,8 @@ func (p *Config) Equals(other *Config) bool {
 		return false
 	}
 
-	return p.APIType == other.APIType &&
+	return p.ID == other.ID &&
+		p.APIType == other.APIType &&
 		p.InferenceEndpoint == other.InferenceEndpoint &&
 		p.ProviderType == other.ProviderType &&
 		p.CatalogEndpoint == other.CatalogEndpoint &&
@@ -139,7 +161,8 @@ func (p *Config) Equals(other *Config) bool {
 
 // Returns true if the provider configuration is empty.
 func (p *Config) IsZero() bool {
-	return p.APIType == APITypeUnknown &&
+	return p.ID.IsZero() &&
+		p.APIType == APITypeUnknown &&
 		p.InferenceEndpoint == "" &&
 		p.ProviderType == ProviderTypeUnknown &&
 		p.CatalogEndpoint == "" &&

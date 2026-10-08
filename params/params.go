@@ -3,6 +3,7 @@ package params
 import (
 	"encoding/json"
 	"fmt"
+	"maps"
 	"strconv"
 
 	"go.rtnl.ai/x/typecase"
@@ -37,6 +38,15 @@ func New(obj map[string]any) *Params {
 	}
 
 	return params
+}
+
+// Clone copies the parameter map. Values themselves are shared and should be
+// treated as read-only when they contain mutable application objects.
+func (p *Params) Clone() *Params {
+	if p == nil {
+		return nil
+	}
+	return &Params{params: maps.Clone(p.params)}
 }
 
 // Set a key-value pair in the params map, normalizing the key before storing it.

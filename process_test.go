@@ -2,18 +2,22 @@ package horizon_test
 
 import (
 	"context"
+	"encoding/json"
 	"fmt"
 	"testing"
 
 	"github.com/stretchr/testify/require"
 
 	"go.rtnl.ai/horizon"
+	"go.rtnl.ai/horizon/attachments"
 	"go.rtnl.ai/horizon/errors"
+	"go.rtnl.ai/horizon/params"
 	"go.rtnl.ai/horizon/prompts"
 	"go.rtnl.ai/horizon/provider"
 	mockprovider "go.rtnl.ai/horizon/provider/mock"
 	"go.rtnl.ai/horizon/schema"
 	"go.rtnl.ai/horizon/task"
+	"go.rtnl.ai/horizon/task/mock"
 	"go.rtnl.ai/ulid"
 	"go.rtnl.ai/x/mime"
 )
@@ -227,6 +231,640 @@ func TestProcessRunRejectsMalformedJSONOutput(t *testing.T) {
 	require.Equal(t, uint64(1), output.Usage.Invocations)
 }
 
+// Exercises response selection and output formats through the full generation lifecycle.
+func TestProcessRunCaptureResponse(t *testing.T) {
+	file := &attachments.Attachment{Filename: "answer.txt", Data: []byte("attachment")}
+	text := func(content string) prompts.Prompts {
+		return prompts.Prompts{{Role: prompts.RoleAssistant, Content: content}}
+	}
+	tests := []struct {
+		name        string
+		messages    prompts.Prompts
+		schema      *schema.Schema
+		attachments attachments.Attachments
+		model       string
+		want        any
+		wantMIME    mime.Type
+		wantErr     error
+	}{
+		{
+			name:    "no messages",
+			wantErr: errors.ErrNoModelOutput,
+		},
+		{
+			name: "ignored messages",
+			messages: prompts.Prompts{
+				nil,
+				{
+					Role:    prompts.RoleUser,
+					Content: "user",
+				},
+				{
+					Role:    prompts.RoleSystem,
+					Content: "system",
+				},
+				{
+					Role: prompts.RoleAssistant,
+				},
+				{
+					Role:    prompts.RoleAssistant,
+					Phase:   "commentary",
+					Content: "thinking",
+				},
+				{
+					Role:    prompts.RoleAssistant,
+					Phase:   "unknown",
+					Content: "unknown",
+				},
+			},
+			wantErr: errors.ErrNoModelOutput,
+		},
+		{
+			name:     "unphased text",
+			messages: text("answer"),
+			want:     "answer",
+			wantMIME: mime.TextPlain,
+		},
+		{
+			name:     "unknown MIME",
+			messages: text("answer"),
+			schema:   &schema.Schema{},
+			want:     "answer",
+			wantMIME: mime.TextPlain,
+		},
+		{
+			name:     "plain text MIME",
+			messages: text("answer"),
+			schema: &schema.Schema{
+				MimeType: mime.TextPlain,
+			},
+			want:     "answer",
+			wantMIME: mime.TextPlain,
+		},
+		{
+			name:     "other MIME",
+			messages: text("<p>answer</p>"),
+			schema: &schema.Schema{
+				MimeType: mime.TextHTML,
+			},
+			want:     "<p>answer</p>",
+			wantMIME: mime.TextHTML,
+		},
+		{
+			name: "multiple unphased messages",
+			messages: prompts.Prompts{
+				nil,
+				{
+					Role:    prompts.RoleUser,
+					Content: "ignore",
+				},
+				{
+					Role:    prompts.RoleAssistant,
+					Content: "first",
+				},
+				{
+					Role: prompts.RoleAssistant,
+				},
+				{
+					Role:    prompts.RoleAssistant,
+					Phase:   "commentary",
+					Content: "ignore",
+				},
+				{
+					Role:    prompts.RoleAssistant,
+					Content: "second",
+				},
+			},
+			want:     "first\nsecond",
+			wantMIME: mime.TextPlain,
+		},
+		{
+			name: "final answers override unphased text",
+			messages: prompts.Prompts{
+				{
+					Role:    prompts.RoleAssistant,
+					Content: "fallback",
+				},
+				{
+					Role:    prompts.RoleAssistant,
+					Phase:   "final_answer",
+					Content: "first",
+				},
+				{
+					Role:    prompts.RoleAssistant,
+					Phase:   "final_answer",
+					Content: "second",
+				},
+			},
+			want:     "first\nsecond",
+			wantMIME: mime.TextPlain,
+		},
+		{
+			name: "empty final answer uses fallback",
+			messages: prompts.Prompts{
+				{
+					Role:  prompts.RoleAssistant,
+					Phase: "final_answer",
+				},
+				{
+					Role:    prompts.RoleAssistant,
+					Content: "fallback",
+				},
+			},
+			want:     "fallback",
+			wantMIME: mime.TextPlain,
+		},
+		{
+			name:     "whitespace remains text",
+			messages: text(" \n"),
+			want:     " \n",
+			wantMIME: mime.TextPlain,
+		},
+		{
+			name:     "resolved model",
+			messages: text("answer"),
+			model:    "resolved-model",
+			want:     "answer",
+			wantMIME: mime.TextPlain,
+		},
+		{
+			name: "attachments only",
+			attachments: attachments.Attachments{
+				file,
+			},
+		},
+		{
+			name:     "attachments and text",
+			messages: text("answer"),
+			attachments: attachments.Attachments{
+				file,
+			},
+			want:     "answer",
+			wantMIME: mime.TextPlain,
+		},
+		{
+			name: "attachments with ignored text",
+			messages: prompts.Prompts{
+				{
+					Role:    prompts.RoleAssistant,
+					Phase:   "commentary",
+					Content: "thinking",
+				},
+			},
+			attachments: attachments.Attachments{
+				file,
+			},
+		},
+		{
+			name: "tool call type",
+			messages: prompts.Prompts{
+				{
+					Role: prompts.RoleAssistant,
+					Type: prompts.TypeToolCall,
+				},
+			},
+			wantErr: errors.ErrCapabilityProviderRequired,
+		},
+		{
+			name: "tool call payload",
+			messages: prompts.Prompts{
+				{
+					Role:    prompts.RoleAssistant,
+					Content: "not a final answer",
+					ToolCalls: []prompts.ToolCall{
+						{
+							CallID: "call-1",
+							Name:   "lookup",
+						},
+					},
+				},
+			},
+			wantErr: errors.ErrCapabilityProviderRequired,
+		},
+		{
+			name: "tool after final answer",
+			messages: prompts.Prompts{
+				{
+					Role:    prompts.RoleAssistant,
+					Phase:   "final_answer",
+					Content: "not returned",
+				},
+				{
+					Role: prompts.RoleAssistant,
+					Type: prompts.TypeToolCall,
+				},
+			},
+			wantErr: errors.ErrCapabilityProviderRequired,
+		},
+		{
+			name:     "JSON object",
+			messages: text(`{"answer":42}`),
+			schema: &schema.Schema{
+				MimeType: mime.ApplicationJSON,
+			},
+			want:     json.RawMessage(`{"answer":42}`),
+			wantMIME: mime.ApplicationJSON,
+		},
+		{
+			name:     "schema JSON",
+			messages: text(`[1,2]`),
+			schema: &schema.Schema{
+				MimeType: mime.ApplicationSchemaJSON,
+			},
+			want:     json.RawMessage(`[1,2]`),
+			wantMIME: mime.ApplicationJSON,
+		},
+		{
+			name:     "JSON null",
+			messages: text(`null`),
+			schema: &schema.Schema{
+				MimeType: mime.ApplicationJSON,
+			},
+			want:     json.RawMessage(`null`),
+			wantMIME: mime.ApplicationJSON,
+		},
+		{
+			name:     "malformed JSON",
+			messages: text(`{"answer":`),
+			schema: &schema.Schema{
+				MimeType: mime.ApplicationJSON,
+			},
+			wantErr: errors.ErrInvalidModelOutput,
+		},
+		{
+			name:     "markdown fenced JSON",
+			messages: text("```json\n{}\n```"),
+			schema: &schema.Schema{
+				MimeType: mime.ApplicationSchemaJSON,
+			},
+			wantErr: errors.ErrInvalidModelOutput,
+		},
+		{
+			name:     "multiple JSON documents",
+			messages: text(`{} {}`),
+			schema: &schema.Schema{
+				MimeType: mime.ApplicationJSON,
+			},
+			wantErr: errors.ErrInvalidModelOutput,
+		},
+	}
+
+	for _, tt := range tests {
+		t.Run(tt.name, func(t *testing.T) {
+			// Setup: return the case's response from a mock provider; use real response processing.
+			response := processTestResponse()
+			response.Model = tt.model
+			response.Output = tt.messages
+			response.Attachments = tt.attachments
+
+			inference := mockprovider.New(ulid.Make())
+			inference.OnGenerate = func(context.Context, *provider.Request) (*provider.Response, error) {
+				return response, nil
+			}
+
+			// Prepare supplies model parameters; Finalize observes results without replacing them.
+			parameters := params.New(map[string]any{"temperature": 0.5})
+			runner := &processTestRunner{
+				prepare: func(_ context.Context, prepared *task.Task) error {
+					prepared.Model.Parameters = parameters
+					return nil
+				},
+				// Finalize must see the same captured content and execution error as the caller.
+				finalize: func(_ context.Context, output *task.Output, executionErr error) error {
+					if tt.wantErr != nil {
+						require.ErrorIs(t, executionErr, tt.wantErr)
+					} else {
+						require.NoError(t, executionErr)
+					}
+					require.Equal(t, tt.want, output.Output)
+					return nil
+				},
+			}
+
+			// Execute through Horizon.Run with the case's declared output schema.
+			output, err := runProcessTest(t, context.Background(), inference, runner, &schema.Output{Schema: tt.schema})
+
+			// Assert the returned error and outcome agree with the case's expected result.
+			if tt.wantErr != nil {
+				require.ErrorIs(t, err, tt.wantErr)
+				require.Equal(t, task.OutcomeFailed, output.Outcome)
+			} else {
+				require.NoError(t, err)
+				require.Equal(t, task.OutcomeSucceeded, output.Outcome)
+			}
+
+			// Every case checks content, MIME type, and attachments, including empty results.
+			require.Equal(t, tt.want, output.Output)
+			require.Equal(t, tt.wantMIME, output.MimeType)
+			require.Equal(t, tt.attachments, output.Attachments)
+
+			// Prefer the provider's resolved model, falling back to the requested model.
+			wantModel := tt.model
+			if wantModel == "" {
+				wantModel = "requested-model"
+			}
+			require.Equal(t, wantModel, output.Model.Slug)
+			require.Equal(t, parameters, output.Model.Parameters)
+
+			// Response-processing failures still retain the mock response's usage.
+			require.Equal(t, uint64(1), output.Usage.Invocations)
+			require.Equal(t, int64(18), output.Usage.TotalTokens)
+			require.Equal(t, 0.25, output.Usage.APICost)
+
+			// Hooks run in order, with exactly one generation and one finalization.
+			require.Equal(t, []string{"prepare", "input guard", "output guard", "finalize"}, runner.events)
+			inference.AssertCalled(t, mockprovider.Generate, 1)
+		})
+	}
+}
+
+// Generation preserves independent failures and never captures rejected or cancelled content.
+func TestProcessRunGenerationFailures(t *testing.T) {
+	providerErr := errors.New("provider failure")
+	guardErr := errors.New("output guard failure")
+	tests := []struct {
+		name           string
+		response       bool
+		providerErr    error
+		guardErr       error
+		malformedJSON  bool
+		cancelProvider bool
+		cancelGuard    bool
+		wantErrors     []error
+		wantGuard      bool
+	}{
+		{
+			name: "nil response",
+			wantErrors: []error{
+				errors.ErrNoModelOutput,
+			},
+		},
+		{
+			name:        "provider error without response",
+			providerErr: providerErr,
+			wantErrors: []error{
+				providerErr,
+			},
+		},
+		{
+			name:        "provider and guard errors",
+			response:    true,
+			providerErr: providerErr,
+			guardErr:    guardErr,
+			wantErrors: []error{
+				providerErr,
+				guardErr,
+			},
+			wantGuard: true,
+		},
+		{
+			name:          "provider and decoding errors",
+			response:      true,
+			providerErr:   providerErr,
+			malformedJSON: true,
+			wantErrors: []error{
+				providerErr,
+				errors.ErrInvalidModelOutput,
+			},
+			wantGuard: true,
+		},
+		{
+			name:          "guard blocks malformed content",
+			response:      true,
+			guardErr:      guardErr,
+			malformedJSON: true,
+			wantErrors: []error{
+				guardErr,
+			},
+			wantGuard: true,
+		},
+		{
+			name:           "cancelled provider error with response",
+			response:       true,
+			providerErr:    providerErr,
+			cancelProvider: true,
+			wantErrors: []error{
+				providerErr,
+				context.Canceled,
+			},
+		},
+		{
+			name:           "cancelled provider error without response",
+			providerErr:    providerErr,
+			cancelProvider: true,
+			wantErrors: []error{
+				providerErr,
+				context.Canceled,
+			},
+		},
+		{
+			name:           "cancelled nil response",
+			cancelProvider: true,
+			wantErrors: []error{
+				context.Canceled,
+			},
+		},
+		{
+			name:        "cancelled output guard",
+			response:    true,
+			cancelGuard: true,
+			wantErrors: []error{
+				context.Canceled,
+			},
+			wantGuard: true,
+		},
+		{
+			name:        "cancelled output guard and both errors",
+			response:    true,
+			providerErr: providerErr,
+			guardErr:    guardErr,
+			cancelGuard: true,
+			wantErrors: []error{
+				providerErr,
+				guardErr,
+				context.Canceled,
+			},
+			wantGuard: true,
+		},
+	}
+	for _, tt := range tests {
+		t.Run(tt.name, func(t *testing.T) {
+			// Setup: trigger failures and cancellation inside the provider or guard callbacks.
+			ctx, cancel := context.WithCancel(context.Background())
+			defer cancel()
+
+			inference := mockprovider.New(ulid.Make())
+			inference.OnGenerate = func(context.Context, *provider.Request) (*provider.Response, error) {
+				if tt.cancelProvider {
+					cancel()
+				}
+				if !tt.response {
+					return nil, tt.providerErr
+				}
+
+				// Include attachments to detect content leaking past rejection or cancellation.
+				response := processTestResponse()
+				response.Attachments = attachments.Attachments{{Filename: "private.txt", Data: []byte("private")}}
+				if tt.malformedJSON {
+					response.Output[0].Content = `{"answer":`
+				}
+				return response, tt.providerErr
+			}
+
+			// The runner injects guard failures and checks cleanup without supplying output.
+			runner := &processTestRunner{
+				protectOutput: func(*provider.Response) error {
+					if tt.cancelGuard {
+						cancel()
+					}
+					return tt.guardErr
+				},
+				// Cleanup must remain usable after cancellation and receive every execution cause.
+				finalize: func(finalizeCtx context.Context, output *task.Output, executionErr error) error {
+					require.NoError(t, finalizeCtx.Err())
+					for _, want := range tt.wantErrors {
+						require.ErrorIs(t, executionErr, want)
+					}
+					require.Nil(t, output.Output)
+					return nil
+				},
+			}
+
+			// Execute with JSON output enabled so malformed content reaches the real decoder check.
+			output, err := runProcessTest(t, ctx, inference, runner, &schema.Output{Schema: &schema.Schema{MimeType: mime.ApplicationJSON}})
+
+			// Assert every independent cause survives wrapping and error joining.
+			for _, want := range tt.wantErrors {
+				require.ErrorIs(t, err, want)
+			}
+
+			// Guard rejection prevents decoding; a missing response must not mask other failures.
+			if !tt.malformedJSON || tt.guardErr != nil {
+				require.NotErrorIs(t, err, errors.ErrInvalidModelOutput)
+			}
+			if tt.name != "nil response" {
+				require.NotErrorIs(t, err, errors.ErrNoModelOutput, "nil response must not mask a provider error or cancellation")
+			}
+
+			// Cancellation determines the outcome even when independent errors are also returned.
+			wantOutcome := task.OutcomeFailed
+			if tt.cancelProvider || tt.cancelGuard {
+				wantOutcome = task.OutcomeCancelled
+			}
+			require.Equal(t, wantOutcome, output.Outcome)
+			require.Nil(t, output.Output)
+
+			// Count the attempted call, but only account tokens and cost from a returned response.
+			require.Equal(t, uint64(1), output.Usage.Invocations)
+			if tt.response {
+				require.Equal(t, int64(18), output.Usage.TotalTokens)
+				require.Equal(t, 0.25, output.Usage.APICost)
+			} else {
+				require.Zero(t, output.Usage.TotalTokens)
+				require.Zero(t, output.Usage.APICost)
+			}
+
+			// Rejected or cancelled responses must not expose their private attachments.
+			if tt.guardErr != nil || tt.cancelProvider || tt.cancelGuard || !tt.response {
+				require.Empty(t, output.Attachments)
+			}
+
+			// Skip the output guard when no response arrives or the provider cancels execution.
+			// Every case must still finalize once, without retrying generation.
+			wantEvents := []string{"prepare", "input guard"}
+			if tt.wantGuard {
+				wantEvents = append(wantEvents, "output guard")
+			}
+			wantEvents = append(wantEvents, "finalize")
+			require.Equal(t, wantEvents, runner.events)
+			inference.AssertCalled(t, mockprovider.Generate, 1)
+		})
+	}
+}
+
+// Checks the allow path with neither guard, either guard alone, or both guards.
+// Unlike the rejection tests, this verifies that each optional interface is detected
+// independently and that returning nil allows execution to continue. Mutations make
+// the ordering observable: input changes reach inference, and output changes reach
+// the caller (as they would for redaction).
+func TestProcessRunOptionalGuards(t *testing.T) {
+	for _, guards := range []string{"none", "input only", "output only", "both"} {
+		t.Run(guards, func(t *testing.T) {
+			// Setup: the provider mutates the request so that we can see that
+			// nil-returning guards ran.
+			inference := mockprovider.New(ulid.Make())
+			inference.OnGenerate = func(_ context.Context, request *provider.Request) (*provider.Response, error) {
+				// Input-guard changes must reach the provider, not just the runner's local state.
+				if guards == "input only" || guards == "both" {
+					require.Equal(t, "guarded-model", request.Model)
+				} else {
+					require.Equal(t, "requested-model", request.Model)
+				}
+				return processTestResponse(), nil
+			}
+
+			// Both guards allow execution. Their mutations are markers proving they ran
+			// before inference and response capture, not replacements for rejection checks.
+			lifecycle := noopRunner()
+			inputGuard := &mock.InputGuard{OnProtectInput: func(request *provider.Request) error {
+				request.Model = "guarded-model"
+				return nil
+			}}
+			outputGuard := &mock.OutputGuard{OnProtectOutput: func(response *provider.Response) error {
+				response.Output[0].Content = "guarded answer"
+				return nil
+			}}
+
+			// Embed only the selected guards so the runner's method set reflects each combination.
+			var runner task.Runner = lifecycle
+			switch guards {
+			case "input only":
+				runner = struct {
+					*mock.Runner
+					*mock.InputGuard
+				}{lifecycle, inputGuard}
+			case "output only":
+				runner = struct {
+					*mock.Runner
+					*mock.OutputGuard
+				}{lifecycle, outputGuard}
+			case "both":
+				runner = struct {
+					*mock.Runner
+					*mock.InputGuard
+					*mock.OutputGuard
+				}{lifecycle, inputGuard, outputGuard}
+			}
+
+			// Execute the same task with only this case's selected interfaces available.
+			output, err := runProcessTest(t, context.Background(), inference, runner, &schema.Output{})
+
+			// Assert execution succeeds for every combination, including no guards.
+			require.NoError(t, err)
+
+			// Output-guard changes must reach the result; absent guards must never be called.
+			want := "answer"
+			if guards == "output only" || guards == "both" {
+				want = "guarded answer"
+				outputGuard.AssertCalled(t, mock.ProtectOutput, 1)
+			} else {
+				outputGuard.AssertNotCalled(t, mock.ProtectOutput)
+			}
+			if guards == "input only" || guards == "both" {
+				inputGuard.AssertCalled(t, mock.ProtectInput, 1)
+			} else {
+				inputGuard.AssertNotCalled(t, mock.ProtectInput)
+			}
+			require.Equal(t, want, output.Output)
+			require.Equal(t, task.OutcomeSucceeded, output.Outcome)
+
+			// Guard combinations must not change the single-generation, single-finalization lifecycle.
+			lifecycle.AssertCalled(t, mock.Finalize, 1)
+			inference.AssertCalled(t, mockprovider.Generate, 1)
+		})
+	}
+}
+
 // Validates required execution inputs before invoking runner lifecycle hooks.
 func TestProcessRunRequiresTaskRunnerAndOutput(t *testing.T) {
 	tests := []struct {
@@ -242,7 +880,9 @@ func TestProcessRunRequiresTaskRunnerAndOutput(t *testing.T) {
 		},
 		{
 			name: "runner",
-			task: &task.Task{Output: &schema.Output{}},
+			task: &task.Task{
+				Output: &schema.Output{},
+			},
 			want: errors.ErrRunnerRequired,
 		},
 		{
@@ -401,7 +1041,7 @@ func (r *processTestRunner) ProtectOutput(response *provider.Response) error {
 	return nil
 }
 
-func runProcessTest(t *testing.T, ctx context.Context, inference provider.Provider, runner *processTestRunner, output *schema.Output) (*task.Output, error) {
+func runProcessTest(t *testing.T, ctx context.Context, inference provider.Provider, runner task.Runner, output *schema.Output) (*task.Output, error) {
 	t.Helper()
 	config := testProviderConfig()
 	config.ID = inference.ID()

@@ -89,11 +89,8 @@ func (p *process) recordUsage(usage provider.Usage) {
 	p.output.Usage.APICost += usage.APICost
 }
 
-// Captures the response from the provider and stores it in the output.
+// Captures a non-nil provider response and stores it in the output.
 func (p *process) captureResponse(response *provider.Response) error {
-	if response == nil {
-		return errors.ErrNoModelOutput
-	}
 
 	// Use the provider's resolved model when available, otherwise keep the
 	// requested slug.
@@ -159,6 +156,7 @@ func (p *process) captureResponse(response *provider.Response) error {
 		if !json.Valid([]byte(text)) {
 			return fmt.Errorf("%w: invalid JSON response", errors.ErrInvalidModelOutput)
 		}
+		// TODO: Validate the JSON result against the task's declared JSON Schema, not just its syntax.
 		p.output.Output = json.RawMessage(text)
 		p.output.MimeType = mime.ApplicationJSON
 	case mime.TextPlain:

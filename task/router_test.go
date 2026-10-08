@@ -135,7 +135,7 @@ func TestRouter(t *testing.T) {
 		paths := make([]*taskPath, 0, 1024)
 		for path := range randomPaths(1024) {
 			paths = append(paths, path)
-			r.Insert(path.path, path.task)
+			require.False(t, r.Insert(path.path, path.task))
 		}
 
 		for _, path := range paths {
@@ -334,6 +334,16 @@ func randomPaths(n int) iter.Seq[*taskPath] {
 
 	return func(yield func(*taskPath) bool) {
 		count := 0
+		seen := make(map[string]struct{})
+		emit := func(path *taskPath) bool {
+			if _, ok := seen[path.path]; ok {
+				return true
+			}
+			seen[path.path] = struct{}{}
+			count++
+			return yield(path)
+		}
+
 		for {
 			if count >= n {
 				return
@@ -349,22 +359,20 @@ func randomPaths(n int) iter.Seq[*taskPath] {
 				slug := slugify.Slugify(task.Name)
 
 				// Yield the latest task version
-				if !yield(makep(task, agent, slug)) {
+				if !emit(makep(task, agent, slug)) {
 					return
 				}
 
-				count++
 				if count >= n {
 					return
 				}
 
 				// Yield the latest task version for each environment
 				for _, env := range envs {
-					if !yield(makep(task, env, agent, slug)) {
+					if !emit(makep(task, env, agent, slug)) {
 						return
 					}
 
-					count++
 					if count >= n {
 						return
 					}
@@ -373,21 +381,19 @@ func randomPaths(n int) iter.Seq[*taskPath] {
 				// Yield multiple versions of the task for each environment
 				nversions := rand.Intn(10) + 1
 				for range nversions {
-					if !yield(makep(task, agent, slug, version.String())) {
+					if !emit(makep(task, agent, slug, version.String())) {
 						return
 					}
 
-					count++
 					if count >= n {
 						return
 					}
 
 					for _, env := range envs {
-						if !yield(makep(task, env, agent, slug, version.String())) {
+						if !emit(makep(task, env, agent, slug, version.String())) {
 							return
 						}
 
-						count++
 						if count >= n {
 							return
 						}

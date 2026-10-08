@@ -9,6 +9,24 @@ import (
 	"go.rtnl.ai/horizon/params"
 )
 
+// Verifies cloned parameter maps can be changed without mutating the original.
+func TestClone(t *testing.T) {
+	t.Run("independent map", func(t *testing.T) {
+		original := params.New(map[string]any{"temperature": 0.5})
+		cloned := original.Clone()
+		cloned.Set("temperature", 1.0)
+		cloned.Set("max_tokens", 10)
+		value, ok := original.Get("temperature")
+		require.True(t, ok)
+		require.Equal(t, 0.5, value)
+		require.Equal(t, 1, original.Len())
+	})
+	t.Run("nil parameters", func(t *testing.T) {
+		var original *params.Params
+		require.Nil(t, original.Clone())
+	})
+}
+
 func TestNew(t *testing.T) {
 	t.Run("Nil", func(t *testing.T) {
 		p := params.New(nil)

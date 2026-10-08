@@ -1,4 +1,4 @@
-package task
+package horizon
 
 import (
 	"bytes"
@@ -8,32 +8,32 @@ import (
 	"net/http"
 	"strings"
 
+	"go.rtnl.ai/horizon/task"
 	"go.rtnl.ai/x/api"
 	"go.rtnl.ai/x/mime"
 )
 
-// Implements the http.Handler interface for service HTTP requests to execute tasks.
-// TODO: add configuration for the handler so that the runner isn't standalone.
-// TODO: should the handler wrap a horizon.Horizon struct instead? Or should the
-// horizon.Horizon struct implement the http.Handler interface?
-// TODO: should the handlers be in their own package?
+// Handler routes HTTP requests to tasks executed by its Horizon.
 type Handler struct {
-	router *Router
-	runner Runner
+	horizon *Horizon
+	router  task.Router
 }
 
-// TODO: ensure all responses are Content-Type: application/json.
-func (h *Handler) Handle(w http.ResponseWriter, r *http.Request) {
+// Implements http.Handler; Gin can adapt it with gin.WrapH.
+var _ http.Handler = (*Handler)(nil)
+
+// ServeHTTP decodes input, executes the routed task, and writes its output.
+func (h *Handler) ServeHTTP(w http.ResponseWriter, r *http.Request) {
 	var (
 		ok     bool
 		err    error
-		task   *Task
-		input  *Input
-		output *Output
+		tsk    *task.Task
+		input  *task.Input
+		output *task.Output
 	)
 
 	// Load the task from the router.
-	if task, ok = h.router.Get(r.URL.Path); !ok {
+	if tsk, ok = h.router.Get(r.URL.Path); !ok {
 		replyJSON(w, api.NotFound, http.StatusNotFound)
 		return
 	}
@@ -45,7 +45,7 @@ func (h *Handler) Handle(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 
-	if output, err = task.Run(r.Context(), input, h.runner); err != nil {
+	if output, err = h.horizon.Run(r.Context(), input, tsk); err != nil {
 		replyJSON(w, api.Error(err), http.StatusInternalServerError)
 		return
 	}
@@ -56,46 +56,10 @@ func (h *Handler) Handle(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 
-	// Write the response.
-	w.WriteHeader(http.StatusOK)
-}
-
-type TaskHandler struct {
-	task   *Task
-	runner Runner
-}
-
-// Implements the http.Handler interface.
-func (h *TaskHandler) Handle(w http.ResponseWriter, r *http.Request) {
-	var (
-		err    error
-		input  *Input
-		output *Output
-	)
-
-	// Load the input from the request.
-	if input, err = decodeInput(r); err != nil {
-		replyJSON(w, api.Error(err), http.StatusBadRequest)
-		return
-	}
-
-	if output, err = h.task.Run(r.Context(), input, h.runner); err != nil {
-		replyJSON(w, api.Error(err), http.StatusInternalServerError)
-		return
-	}
-
-	// Write the output to the response.
-	if err = replyOutput(w, output); err != nil {
-		replyJSON(w, api.Error(err), http.StatusInternalServerError)
-		return
-	}
-
-	// Write the response.
-	w.WriteHeader(http.StatusOK)
 }
 
 // Decode the task input from the request.
-func decodeInput(r *http.Request) (input *Input, err error) {
+func decodeInput(r *http.Request) (input *task.Input, err error) {
 	// Parse the form.
 	if err = r.ParseForm(); err != nil {
 		return nil, err
@@ -103,7 +67,7 @@ func decodeInput(r *http.Request) (input *Input, err error) {
 
 	switch {
 	case r.Method == http.MethodGet:
-		input = &Input{}
+		input = &task.Input{}
 		if err = input.DecodeValues(r.Form); err != nil {
 			return nil, err
 		}
@@ -113,7 +77,7 @@ func decodeInput(r *http.Request) (input *Input, err error) {
 		}
 	default:
 		// Parse the JSON body for standard POST requests.
-		input = &Input{}
+		input = &task.Input{}
 		if err = json.NewDecoder(r.Body).Decode(input); err != nil {
 			return nil, err
 		}
@@ -123,13 +87,13 @@ func decodeInput(r *http.Request) (input *Input, err error) {
 }
 
 // Decode a multipart form from the request.
-func decodeMultipart(r *http.Request) (input *Input, err error) {
+func decodeMultipart(r *http.Request) (input *task.Input, err error) {
 	var reader *multipart.Reader
 	if reader, err = r.MultipartReader(); err != nil {
 		return nil, err
 	}
 
-	input = &Input{}
+	input = &task.Input{}
 	for {
 		var part *multipart.Part
 		if part, err = reader.NextPart(); err != nil {
@@ -146,7 +110,7 @@ func decodeMultipart(r *http.Request) (input *Input, err error) {
 }
 
 // Write the task output to the HTTP response, handling multipart for attachments.
-func replyOutput(w http.ResponseWriter, output *Output) (err error) {
+func replyOutput(w http.ResponseWriter, output *task.Output) (err error) {
 	if len(output.Attachments) > 0 {
 		body := &bytes.Buffer{}
 		writer := multipart.NewWriter(body)
@@ -178,6 +142,9 @@ func replyOutput(w http.ResponseWriter, output *Output) (err error) {
 
 		// Set the content type boundaries.
 		w.Header().Set("Content-Type", writer.FormDataContentType())
+		if _, err = w.Write(body.Bytes()); err != nil {
+			return err
+		}
 	} else {
 		// If there are no attachments, this is just a JSON response.
 		w.Header().Set("Content-Type", "application/json")
@@ -191,15 +158,12 @@ func replyOutput(w http.ResponseWriter, output *Output) (err error) {
 
 // Write a JSON response from the reply.
 func replyJSON(w http.ResponseWriter, reply api.Reply, status int) {
-	w.WriteHeader(status)
 	w.Header().Set("Content-Type", "application/json")
+	w.WriteHeader(status)
 	json.NewEncoder(w).Encode(reply)
 }
 
-// Create a new task handler for testing.
-func NewTaskHandler(task *Task, runner Runner) *TaskHandler {
-	return &TaskHandler{
-		task:   task,
-		runner: runner,
-	}
+// Router returns the handler's router so callers can add, replace, or remove routes.
+func (h *Handler) Router() *task.Router {
+	return &h.router
 }

@@ -11,6 +11,8 @@ type Runner struct {
 	OnFinalize func(ctx context.Context, output *task.Output) error
 }
 
+var _ task.Runner = (*Runner)(nil)
+
 func (r *Runner) Prepare(ctx context.Context, task *task.Task) error {
 	if r.OnPrepare != nil {
 		return r.OnPrepare(ctx, task)

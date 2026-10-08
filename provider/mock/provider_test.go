@@ -8,11 +8,14 @@ import (
 	"go.rtnl.ai/horizon/provider"
 	"go.rtnl.ai/horizon/provider/catalog"
 	"go.rtnl.ai/horizon/provider/mock"
+	"go.rtnl.ai/ulid"
 )
 
 // Ensures that the mock provider works as expected
 func TestMockProvider(t *testing.T) {
-	m := mock.New()
+	id := ulid.Make()
+	m := mock.New(id)
+	require.Equal(t, id, m.ID())
 	ctx := context.Background()
 	m.OnGenerate = func(ctx context.Context, req *provider.Request) (*provider.Response, error) {
 		require.Equal(t, context.Background(), ctx)

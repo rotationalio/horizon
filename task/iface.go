@@ -21,9 +21,6 @@ type Runner interface {
 	// possible in the task flow.
 	Prepare(context.Context, *Task) error
 
-	// Execute an LLM generation or model inference request to the runner backend.
-	// Generate(context.Context, *Request) (*Response, error)
-
 	// The finalize method will always be called last allowing the runner to perform any
 	// necessary cleanup or modify the results of the task execution.
 	Finalize(context.Context, *Output) error

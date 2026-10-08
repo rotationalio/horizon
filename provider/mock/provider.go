@@ -8,6 +8,7 @@ import (
 	"go.rtnl.ai/horizon/provider"
 	"go.rtnl.ai/horizon/provider/auth"
 	"go.rtnl.ai/horizon/provider/catalog"
+	"go.rtnl.ai/ulid"
 )
 
 const (
@@ -20,6 +21,7 @@ const (
 )
 
 type MockProvider struct {
+	id ulid.ULID
 	mock.Mock
 	OnGenerate          func(ctx context.Context, req *provider.Request) (*provider.Response, error)
 	OnFetchCatalog      func(ctx context.Context) ([]catalog.Model, error)
@@ -31,8 +33,8 @@ var _ provider.Provider = (*MockProvider)(nil)
 
 func init() {
 	provider.Register(provider.ProviderTypeMock, provider.Registration{
-		Factory: func(provider.Config) (provider.Provider, error) {
-			return New(), nil
+		Factory: func(config provider.Config) (provider.Provider, error) {
+			return New(config.ID), nil
 		},
 		APITypes: []provider.APIType{
 			provider.APITypeMock,
@@ -50,8 +52,14 @@ func init() {
 	})
 }
 
-func New() *MockProvider {
-	return &MockProvider{}
+// New creates a mock provider with the supplied configuration ID.
+func New(id ulid.ULID) *MockProvider {
+	return &MockProvider{id: id}
+}
+
+// ID returns the provider configuration ID.
+func (m *MockProvider) ID() ulid.ULID {
+	return m.id
 }
 
 func (m *MockProvider) Generate(ctx context.Context, req *provider.Request) (*provider.Response, error) {

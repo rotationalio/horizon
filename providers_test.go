@@ -7,11 +7,15 @@ import (
 	"go.rtnl.ai/horizon"
 	"go.rtnl.ai/horizon/provider"
 	"go.rtnl.ai/horizon/provider/auth"
+	"go.rtnl.ai/ulid"
 )
 
 // Verifies the root factory registers and constructs built-in providers without
 // requiring callers to import implementation packages.
 func TestNewProviderRegistersBuiltins(t *testing.T) {
+	id, err := ulid.Parse("01ARZ3NDEKTSV4RRFFQ69G5FAV")
+	require.NoError(t, err)
+
 	tests := []struct {
 		name   string
 		config provider.Config
@@ -19,6 +23,7 @@ func TestNewProviderRegistersBuiltins(t *testing.T) {
 		{
 			name: "Mock",
 			config: provider.Config{
+				ID:           id,
 				APIType:      provider.APITypeMock,
 				ProviderType: provider.ProviderTypeMock,
 				Credentials:  auth.NewNone(),
@@ -27,6 +32,7 @@ func TestNewProviderRegistersBuiltins(t *testing.T) {
 		{
 			name: "OpenAI",
 			config: provider.Config{
+				ID:                id,
 				APIType:           provider.APITypeOpenAIResponses,
 				ProviderType:      provider.ProviderTypeOpenAI,
 				InferenceEndpoint: "https://api.openai.com/v1",
@@ -37,6 +43,7 @@ func TestNewProviderRegistersBuiltins(t *testing.T) {
 		{
 			name: "OpenAICompatible",
 			config: provider.Config{
+				ID:                id,
 				APIType:           provider.APITypeOpenAIChatCompletions,
 				ProviderType:      provider.ProviderTypeOpenAICompatible,
 				InferenceEndpoint: "http://localhost:11434/v1",
@@ -48,6 +55,7 @@ func TestNewProviderRegistersBuiltins(t *testing.T) {
 		{
 			name: "OpenRouter",
 			config: provider.Config{
+				ID:                id,
 				APIType:           provider.APITypeOpenAIChatCompletions,
 				ProviderType:      provider.ProviderTypeOpenRouter,
 				InferenceEndpoint: "https://openrouter.ai/api/v1",
@@ -62,6 +70,7 @@ func TestNewProviderRegistersBuiltins(t *testing.T) {
 			actual, err := horizon.NewProvider(tc.config)
 			require.NoError(t, err)
 			require.NotNil(t, actual)
+			require.Equal(t, tc.config.ID, actual.ID())
 		})
 	}
 }

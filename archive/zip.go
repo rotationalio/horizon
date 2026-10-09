@@ -16,7 +16,7 @@ import (
 	"go.rtnl.ai/horizon/version"
 	"go.rtnl.ai/ulid"
 	"go.rtnl.ai/x/semver"
-	yaml "gopkg.in/yaml.v2"
+	"go.yaml.in/yaml/v3"
 )
 
 //============================================================================

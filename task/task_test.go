@@ -14,7 +14,7 @@ import (
 	"go.rtnl.ai/horizon/schema"
 	"go.rtnl.ai/horizon/task"
 	"go.rtnl.ai/ulid"
-	"gopkg.in/yaml.v3"
+	"go.yaml.in/yaml/v3"
 )
 
 // Verifies execution copies isolate task configuration while preserving nil fields.

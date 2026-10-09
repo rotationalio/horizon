@@ -9,15 +9,25 @@ import (
 	"go.rtnl.ai/x/mime"
 )
 
+// Outcome is the terminal result of a task execution.
+type Outcome string
+
+const (
+	OutcomeSucceeded Outcome = "succeeded"
+	OutcomeFailed    Outcome = "failed"
+	OutcomeCancelled Outcome = "cancelled"
+)
+
 type Output struct {
 	Usage        Usage               `json:"usage"`
 	Model        Model               `json:"model"`
-	Output       any                 `json:"output,omitempty"`
+	Output       any                 `json:"output,omitempty"` // Final or partial model output; Run may return it with an error.
 	MimeType     mime.Type           `json:"mime_type"`
 	Capabilities []capabilities.Name `json:"capabilities"`
 	Actions      Actions             `json:"actions,omitempty"`
 	Started      time.Time           `json:"started"`
 	Finished     time.Time           `json:"finished"`
+	Outcome      Outcome             `json:"outcome"`
 	Attachments  attachments.Attachments
 }
 

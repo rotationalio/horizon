@@ -21,9 +21,9 @@ type Runner interface {
 	// possible in the task flow.
 	Prepare(context.Context, *Task) error
 
-	// The finalize method will always be called last allowing the runner to perform any
-	// necessary cleanup or modify the results of the task execution.
-	Finalize(context.Context, *Output) error
+	// Finalize runs once after execution starts. execErr is an execution failure,
+	// or nil for no failure, and is joined to the horizon run return error.
+	Finalize(ctx context.Context, output *Output, execErr error) error
 }
 
 // CapabilityRunner is an optional runner extension for resolving task-selected

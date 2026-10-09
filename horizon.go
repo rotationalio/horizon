@@ -3,8 +3,12 @@ package horizon
 import (
 	"context"
 	"fmt"
+	stdhttp "net/http"
+	"time"
 
-	"go.rtnl.ai/horizon/errors"
+	"go.opentelemetry.io/otel/codes"
+	"go.rtnl.ai/horizon/config"
+	"go.rtnl.ai/horizon/http"
 	"go.rtnl.ai/horizon/provider"
 	"go.rtnl.ai/horizon/task"
 	"go.rtnl.ai/ulid"
@@ -20,32 +24,42 @@ type RunnerFactory interface {
 // Horizon owns shared provider registrations and creates execution-specific
 // runners. Create with [New].
 type Horizon struct {
-	providers *provider.Cache
-	factory   RunnerFactory
-	handler   *Handler
+	providers  *provider.Cache
+	factory    RunnerFactory
+	handler    *Handler
+	config     config.Config
+	httpClient *stdhttp.Client
 }
 
 // New creates a Horizon using factory for embedded and HTTP executions.
-// The factory must be non-nil.
-func New(factory RunnerFactory) *Horizon {
+func New(factory RunnerFactory, options ...Option) (*Horizon, error) {
+	conf, err := config.Get()
+	if err != nil {
+		return nil, fmt.Errorf("load Horizon configuration: %w", err)
+	}
+
+	resolved := ResolveOptions(options...)
+	client := resolved.HTTPClient
+	if client == nil {
+		client, err = http.New()
+		if err != nil {
+			return nil, err
+		}
+	}
+
+	providers, err := provider.NewCache(provider.WithHTTPClient(client))
+	if err != nil {
+		return nil, fmt.Errorf("create provider cache: %w", err)
+	}
+
 	h := &Horizon{
-		providers: provider.NewCache(),
-		factory:   factory,
+		providers:  providers,
+		factory:    factory,
+		config:     conf,
+		httpClient: client,
 	}
 	h.handler = &Handler{horizon: h}
-	return h
-}
-
-// AddProvider prewarms the cache with config. Executions also populate the cache
-// automatically from their task's provider configuration.
-func (h *Horizon) AddProvider(config provider.Config) error {
-	return h.providers.Add(config)
-}
-
-// AddProviderInstance caches an already-constructed provider (non-nil) with its
-// configuration while always replacing any existing provider with the same ID.
-func (h *Horizon) AddProviderInstance(config provider.Config, instance provider.Provider) error {
-	return h.providers.AddInstance(config, instance)
+	return h, nil
 }
 
 // GetProvider returns the cached provider with the given ID, if one exists.
@@ -72,7 +86,17 @@ func (h *Horizon) Handler() *Handler {
 }
 
 // Run creates a runner and executes taskDefinition with input.
-func (h *Horizon) Run(ctx context.Context, input *task.Input, taskDefinition *task.Task) (*task.Output, error) {
+func (h *Horizon) Run(ctx context.Context, input *task.Input, taskDefinition *task.Task) (output *task.Output, err error) {
+	ctx, span := tracer.Start(ctx, "horizon.run")
+	defer func() {
+		if err != nil {
+			span.SetStatus(codes.Error, "horizon run failed")
+		}
+		span.End()
+	}()
+
+	ctx, cancel := withExecutionTimeout(ctx, h.config.ExecutionTimeout)
+	defer cancel()
 	if err := ctx.Err(); err != nil {
 		return nil, err
 	}
@@ -81,27 +105,34 @@ func (h *Horizon) Run(ctx context.Context, input *task.Input, taskDefinition *ta
 	if err != nil {
 		return nil, fmt.Errorf("create task runner: %w", err)
 	}
-	proc := &process{
-		horizon: h,
-		runner:  runner,
-		task:    taskDefinition,
-		input:   input,
-	}
+	proc := newProcess(h, runner, input, taskDefinition, h.config, nil)
 	return proc.Run(ctx)
 }
 
-// Run executes a one-off task with an explicit runner and provider, without a
-// [Horizon] or [provider.Cache]. Use [NewProvider] to construct a provider
-// from configuration.
-func Run(ctx context.Context, input *task.Input, taskDefinition *task.Task, runner task.Runner, provider provider.Provider) (*task.Output, error) {
-	if provider == nil {
-		return nil, errors.ErrProviderRequired
+// Run executes a one-off task with an explicit runner.
+func Run(ctx context.Context, input *task.Input, tsk *task.Task, runner task.Runner) (*task.Output, error) {
+	conf, err := config.Get()
+	if err != nil {
+		return nil, fmt.Errorf("load Horizon configuration: %w", err)
 	}
-	proc := &process{
-		runner:   runner,
-		task:     taskDefinition,
-		input:    input,
-		provider: provider,
+
+	client, err := http.New()
+	if err != nil {
+		return nil, err
 	}
+
+	ctx, cancel := withExecutionTimeout(ctx, conf.ExecutionTimeout)
+	defer cancel()
+
+	proc := newProcess(nil, runner, input, tsk, conf, client)
 	return proc.Run(ctx)
+}
+
+// Sets an execution timeout on the context if one is configured, otherwise
+// returns the context as-is and a no-op cancel function.
+func withExecutionTimeout(ctx context.Context, timeout time.Duration) (context.Context, context.CancelFunc) {
+	if timeout == 0 {
+		return ctx, func() {}
+	}
+	return context.WithTimeout(ctx, timeout)
 }

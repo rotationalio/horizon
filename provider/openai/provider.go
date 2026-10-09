@@ -2,6 +2,7 @@ package openai
 
 import (
 	"go.rtnl.ai/horizon/errors"
+
 	"go.rtnl.ai/horizon/provider"
 	"go.rtnl.ai/horizon/provider/auth"
 	"go.rtnl.ai/ulid"
@@ -41,23 +42,23 @@ func init() {
 	})
 }
 
-// Constructs an OpenAI or OpenAI-compatible provider.
-func NewProvider(conf provider.Config) (p provider.Provider, err error) {
+// NewProvider constructs an OpenAI or OpenAI-compatible provider using the supplied options.
+func NewProvider(conf provider.Config, options provider.Options) (p provider.Provider, err error) {
 	client := &Provider{id: conf.ID}
 	switch conf.APIType {
 	case provider.APITypeOpenAIResponses:
-		if client.Generator, err = NewResponses(conf); err != nil {
+		if client.Generator, err = NewResponses(conf, options); err != nil {
 			return nil, err
 		}
 	case provider.APITypeOpenAIChatCompletions:
-		if client.Generator, err = NewChatCompletions(conf); err != nil {
+		if client.Generator, err = NewChatCompletions(conf, options); err != nil {
 			return nil, err
 		}
 	default:
 		return nil, errors.ErrUnsupportedAPIType
 	}
 
-	if client.CatalogClient, err = NewCatalog(conf); err != nil {
+	if client.CatalogClient, err = NewCatalog(conf, options); err != nil {
 		return nil, err
 	}
 	return client, nil

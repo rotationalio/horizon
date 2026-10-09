@@ -118,8 +118,11 @@ func TestAttachmentDownloadUsesConfiguredSizeLimit(t *testing.T) {
 // Confirms the attachment timeout cancels only its derived request context.
 // Downloads a body over 64 MiB when the configured limit is raised above the default.
 func TestAttachmentDownloadLimitCanExceedDefault(t *testing.T) {
-	bodySize := config.DefaultAttachmentMaxDownloadBytes + 1
-	maxBytes := config.DefaultAttachmentMaxDownloadBytes + (1 << 20)
+	defaults, err := config.New()
+	require.NoError(t, err)
+	defaultMaxBytes := defaults.AttachmentMaxDownloadBytes
+	bodySize := defaultMaxBytes + 1
+	maxBytes := defaultMaxBytes + (1 << 20)
 	setAttachmentConfig(t, maxBytes, 10*time.Second)
 
 	server := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, _ *http.Request) {
@@ -211,10 +214,9 @@ func TestAttachmentPropagatesCallerCancellation(t *testing.T) {
 func setAttachmentConfig(t *testing.T, maxBytes int64, timeout time.Duration) {
 	t.Helper()
 	t.Cleanup(config.Reset)
-	require.NoError(t, config.Set(config.Config{
-		RendererCacheSize:          128,
-		MaxToolTurns:               config.DefaultMaxToolTurns,
-		AttachmentMaxDownloadBytes: maxBytes,
-		AttachmentDownloadTimeout:  timeout,
-	}))
+	conf, err := config.New()
+	require.NoError(t, err)
+	conf.AttachmentMaxDownloadBytes = maxBytes
+	conf.AttachmentDownloadTimeout = timeout
+	require.NoError(t, config.Set(*conf))
 }

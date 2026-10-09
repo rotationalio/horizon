@@ -5,7 +5,6 @@ import (
 	"encoding/json"
 	"strings"
 	"testing"
-	"time"
 
 	"github.com/stretchr/testify/require"
 	"go.rtnl.ai/horizon/attachments"
@@ -32,11 +31,11 @@ func TestChatIntegration(t *testing.T) {
 		InferenceEndpoint: testenv.OpenRouterEndpointURL(t),
 	}
 
-	client, err := openai.NewChatCompletions(conf)
+	client, err := openai.NewChatCompletions(conf, provider.ResolveOptions())
 	require.NoError(t, err)
 
 	t.Run("Simple", func(t *testing.T) {
-		ctx, cancel := context.WithTimeout(context.Background(), 30*time.Second)
+		ctx, cancel := context.WithTimeout(context.Background(), testenv.LiveRequestTimeout)
 		defer cancel()
 
 		req := &provider.Request{
@@ -68,7 +67,7 @@ func TestChatIntegration(t *testing.T) {
 	})
 
 	t.Run("OutputSchema", func(t *testing.T) {
-		ctx, cancel := context.WithTimeout(context.Background(), 30*time.Second)
+		ctx, cancel := context.WithTimeout(context.Background(), testenv.LiveRequestTimeout)
 		defer cancel()
 
 		req := &provider.Request{
@@ -129,7 +128,7 @@ func TestChatIntegration(t *testing.T) {
 	})
 
 	t.Run("TextAttachment", func(t *testing.T) {
-		ctx, cancel := context.WithTimeout(context.Background(), 30*time.Second)
+		ctx, cancel := context.WithTimeout(context.Background(), testenv.LiveRequestTimeout)
 		defer cancel()
 
 		req := &provider.Request{
@@ -183,7 +182,7 @@ func TestChatIntegration(t *testing.T) {
 	})
 
 	t.Run("ImageAttachment", func(t *testing.T) {
-		ctx, cancel := context.WithTimeout(context.Background(), 30*time.Second)
+		ctx, cancel := context.WithTimeout(context.Background(), testenv.LiveRequestTimeout)
 		defer cancel()
 
 		req := &provider.Request{
@@ -241,7 +240,7 @@ func TestChatIntegration(t *testing.T) {
 	})
 
 	t.Run("AudioAttachment", func(t *testing.T) {
-		ctx, cancel := context.WithTimeout(context.Background(), 30*time.Second)
+		ctx, cancel := context.WithTimeout(context.Background(), testenv.LiveRequestTimeout)
 		defer cancel()
 
 		req := &provider.Request{
@@ -295,7 +294,7 @@ func TestChatIntegration(t *testing.T) {
 	})
 
 	t.Run("FileAttachment", func(t *testing.T) {
-		ctx, cancel := context.WithTimeout(context.Background(), 30*time.Second)
+		ctx, cancel := context.WithTimeout(context.Background(), testenv.LiveRequestTimeout)
 		defer cancel()
 
 		req := &provider.Request{

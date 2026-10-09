@@ -6,6 +6,7 @@ import (
 	"github.com/stretchr/testify/require"
 
 	"go.rtnl.ai/horizon/errors"
+
 	"go.rtnl.ai/horizon/provider"
 	"go.rtnl.ai/horizon/provider/auth"
 	"go.rtnl.ai/horizon/provider/mock"
@@ -84,7 +85,7 @@ func TestNew(t *testing.T) {
 		}
 		for _, tt := range constructors {
 			t.Run(tt.name, func(t *testing.T) {
-				_, err := tt.newProvider(provider.Config{APIType: provider.APITypeMock})
+				_, err := tt.newProvider(provider.Config{APIType: provider.APITypeMock}, provider.ResolveOptions())
 				require.ErrorIs(t, err, errors.ErrUnsupportedAPIType)
 			})
 		}

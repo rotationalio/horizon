@@ -4,7 +4,7 @@ import (
 	"sync"
 
 	"github.com/cespare/xxhash/v2"
-	"go.rtnl.ai/x/cache"
+	lru "github.com/hashicorp/golang-lru/v2"
 )
 
 // A factory function for creating a [Renderer] from a renderer [Type] and a
@@ -17,7 +17,7 @@ type RendererFactory func(Type, string) (Renderer, error)
 type Cache struct {
 	mu      sync.RWMutex
 	factory RendererFactory
-	cache   *cache.LRU[uint64, Renderer]
+	cache   *lru.Cache[uint64, Renderer]
 }
 
 // Creates a new [Cache] with the given size and factory function.
@@ -33,7 +33,7 @@ func NewCache(size int, factory RendererFactory) (c *Cache, err error) {
 		factory: factory,
 	}
 
-	if c.cache, err = cache.NewLRU[uint64, Renderer](size, nil); err != nil {
+	if c.cache, err = lru.New[uint64, Renderer](size); err != nil {
 		return nil, err
 	}
 	return c, nil
@@ -73,6 +73,6 @@ func (c *Cache) Render(t Type, template string, data map[string]any) (out string
 	}
 
 	// Add the renderer to the cache and return the rendered output.
-	c.cache.Put(key, renderer)
+	c.cache.Add(key, renderer)
 	return renderer.Render(data)
 }

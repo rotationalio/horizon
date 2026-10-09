@@ -29,7 +29,7 @@ func TestNewWithoutAuthDoesNotInheritAPIKey(t *testing.T) {
 	client, err := openai.New(provider.Config{
 		InferenceEndpoint: server.URL + "/v1",
 		Credentials:       auth.NewNone(),
-	})
+	}, provider.ResolveOptions())
 	require.NoError(t, err)
 
 	_, err = client.Models.List(t.Context())

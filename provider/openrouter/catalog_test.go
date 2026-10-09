@@ -9,6 +9,7 @@ import (
 	"time"
 
 	"github.com/stretchr/testify/require"
+	"go.rtnl.ai/horizon/internal/testenv"
 	"go.rtnl.ai/horizon/modality"
 	"go.rtnl.ai/horizon/provider"
 	"go.rtnl.ai/horizon/provider/auth"
@@ -76,7 +77,10 @@ func TestFetchLive(t *testing.T) {
 
 	client := testCatalogClient(t)
 
-	models, err := client.FetchCatalog(context.Background())
+	ctx, cancel := context.WithTimeout(context.Background(), testenv.LiveRequestTimeout)
+	defer cancel()
+
+	models, err := client.FetchCatalog(ctx)
 	require.NoError(t, err)
 	require.Greater(t, len(models), 1)
 
@@ -330,7 +334,7 @@ func testCatalogClient(t *testing.T) *openrouter.CatalogClient {
 
 	client, err := openrouter.NewCatalog(provider.Config{
 		CatalogEndpoint: "https://openrouter.ai/api/v1/models",
-	})
+	}, provider.ResolveOptions())
 	require.NoError(t, err)
 	return client
 }
@@ -362,7 +366,7 @@ func testCatalogClientWithServer(t *testing.T) (*openrouter.CatalogClient, strin
 	client, err := openrouter.NewCatalog(provider.Config{
 		CatalogEndpoint: ts.URL + "/api/v1/models",
 		Credentials:     auth.NewAPIKey("test-key"),
-	})
+	}, provider.ResolveOptions())
 	require.NoError(t, err)
 	return client, ts.URL
 }

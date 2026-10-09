@@ -4,6 +4,7 @@ import (
 	"context"
 	"encoding/json"
 	"fmt"
+
 	"net/url"
 	"strconv"
 	"strings"
@@ -34,8 +35,8 @@ type CatalogClient struct {
 	modelEndpoint *http.Endpoint
 }
 
-// NewCatalog creates an OpenRouter catalog client.
-func NewCatalog(conf provider.Config) (*CatalogClient, error) {
+// NewCatalog creates an OpenRouter catalog client using the resolved provider options.
+func NewCatalog(conf provider.Config, options provider.Options) (*CatalogClient, error) {
 	listURL, err := catalogEndpointWithAllModalities(conf.CatalogEndpoint)
 	if err != nil {
 		return nil, err
@@ -45,11 +46,11 @@ func NewCatalog(conf provider.Config) (*CatalogClient, error) {
 		return nil, err
 	}
 
-	endpoint, err := http.NewEndpoint(listURL, nil, conf.Credentials)
+	endpoint, err := http.NewEndpoint(listURL, options.HTTPClient, conf.Credentials)
 	if err != nil {
 		return nil, err
 	}
-	modelEndpoint, err := http.NewEndpoint(modelURL, nil, conf.Credentials)
+	modelEndpoint, err := http.NewEndpoint(modelURL, options.HTTPClient, conf.Credentials)
 	if err != nil {
 		return nil, err
 	}

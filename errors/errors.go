@@ -17,6 +17,7 @@ var (
 	ErrInferenceConnectivity    = errors.New("inference connectivity check failed")
 	ErrInferenceRequired        = errors.New("inference client is required")
 	ErrInvalidInferenceEndpoint = errors.New("invalid inference endpoint")
+	ErrInvalidModelOutput       = errors.New("model output does not match the requested format")
 	ErrNoModelOutput            = errors.New("no output response returned from the model")
 
 	// Capability tool-loop errors
@@ -33,6 +34,7 @@ var (
 
 	// Task-related errors
 	ErrRunnerRequired             = errors.New("runner is required")
+	ErrTaskExecutionFailed        = errors.New("task execution failed")
 	ErrTaskArchiveBootstrapFailed = errors.New("horizon task archive bootstrap failed")
 	ErrTaskModalitiesRequired     = errors.New("task modalities are required")
 	ErrTaskOutputRequired         = errors.New("task output is required")

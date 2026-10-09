@@ -8,8 +8,8 @@ import (
 	"go.rtnl.ai/horizon/provider/auth"
 )
 
-// Constructs a provider from validated configuration.
-type Factory func(Config) (Provider, error)
+// Factory constructs a provider from validated configuration and resolved options.
+type Factory func(Config, Options) (Provider, error)
 
 // Describes a provider implementation and the configurations it supports.
 type Registration struct {
@@ -53,18 +53,18 @@ func Register(providerType ProviderType, registration Registration) {
 	registry.providers[providerType] = registration
 }
 
-// Validates config and constructs its registered provider.
+// New validates config and constructs its registered provider using the supplied options.
 //
 // NOTE: see the documentation on the provider package for more details on how
 // to import provider implementation packages if you use this function
 // directly, otherwise the use of [horizon.NewProvider] is preferred.
-func New(config Config) (Provider, error) {
+func New(config Config, options ...Option) (Provider, error) {
 	if err := config.Validate(); err != nil {
 		return nil, err
 	}
 
 	registration, _ := LookupRegistration(config.ProviderType)
-	return registration.Factory(config)
+	return registration.Factory(config, ResolveOptions(options...))
 }
 
 // Returns the [Registration] for the given provider type, if it is registered.

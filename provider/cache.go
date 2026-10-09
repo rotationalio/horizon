@@ -3,17 +3,21 @@ package provider
 import (
 	"crypto/sha256"
 	"fmt"
-	"sync"
 
+	lru "github.com/hashicorp/golang-lru/v2"
+	"go.rtnl.ai/horizon/config"
 	"go.rtnl.ai/horizon/errors"
+
 	"go.rtnl.ai/ulid"
+	"golang.org/x/sync/singleflight"
 )
 
 // Cache stores configured provider instances for an application.
 // Construct caches with [NewCache].
 type Cache struct {
-	mu        sync.RWMutex
-	providers map[ulid.ULID]cachedProvider
+	providers *lru.Cache[ulid.ULID, cachedProvider]
+	options   Options
+	creating  singleflight.Group
 }
 
 type cachedProvider struct {
@@ -21,29 +25,19 @@ type cachedProvider struct {
 	fingerprint [sha256.Size]byte
 }
 
-// NewCache creates an empty provider cache.
-func NewCache() *Cache {
-	return &Cache{providers: make(map[ulid.ULID]cachedProvider)}
-}
-
-// Add constructs and caches the provider configured by config. Adding the same
-// ID and configuration reuses the existing instance. A changed configuration
-// replaces it for future lookups.
-func (c *Cache) Add(config Config) error {
-	_, err := c.GetOrCreate(config, nil)
-	return err
-}
-
-// AddInstance caches an existing provider with its configuration, replacing any
-// instance under config.ID. IDs must match; the caller is responsible for ensuring
-// the configuration's settings and credentials describe the supplied instance.
-// Typed-nil providers must not be supplied.
-func (c *Cache) AddInstance(config Config, instance Provider) error {
-	if instance == nil {
-		return errors.ErrProviderRequired
+// NewCache creates an empty provider cache using the configured cache capacity
+// and provider options.
+func NewCache(options ...Option) (*Cache, error) {
+	conf, err := config.Get()
+	if err != nil {
+		return nil, fmt.Errorf("load provider cache configuration: %w", err)
 	}
-	_, err := c.GetOrCreate(config, instance)
-	return err
+
+	providers, err := lru.New[ulid.ULID, cachedProvider](conf.ProviderCacheSize)
+	if err != nil {
+		return nil, fmt.Errorf("create provider cache: %w", err)
+	}
+	return &Cache{providers: providers, options: ResolveOptions(options...)}, nil
 }
 
 // GetOrCreate returns the instance matching config, constructing and caching it
@@ -64,34 +58,44 @@ func (c *Cache) GetOrCreate(config Config, instance Provider) (Provider, error) 
 		return nil, fmt.Errorf("hash provider configuration: %w", err)
 	}
 
-	if construct {
-		c.mu.RLock()
-		cached, ok := c.providers[config.ID]
-		c.mu.RUnlock()
-		if ok && cached.fingerprint == fingerprint {
-			// Cached instance matches, no need to replace.
-			return cached.instance, nil
-		}
+	if !construct {
+		c.providers.Add(config.ID, cachedProvider{
+			instance:    instance,
+			fingerprint: fingerprint,
+		})
+		return instance, nil
 	}
 
-	c.mu.Lock()
-	defer c.mu.Unlock()
+	// Return a cached instance without entering singleflight coordination.
+	if cached, ok := c.providers.Get(config.ID); ok && cached.fingerprint == fingerprint {
+		return cached.instance, nil
+	}
 
-	if construct {
-		if cached, ok := c.providers[config.ID]; ok && cached.fingerprint == fingerprint {
-			// Double-checked locking in case we lost a race; cached instance matches, no need to replace.
+	// Otherwise, we need to construct a new instance and cache it. The
+	// singleflight.Group ensures that only one instance is constructed at a
+	// time and all callers receive the same instance.
+	key := config.ID.String() + string(fingerprint[:])
+	value, err, _ := c.creating.Do(key, func() (any, error) {
+		// Check again in case we lost a race before the Do was called, though
+		// unlikely.
+		if cached, ok := c.providers.Get(config.ID); ok && cached.fingerprint == fingerprint {
 			return cached.instance, nil
 		}
-		if instance, err = New(config); err != nil {
+
+		instance, err := New(config, WithHTTPClient(c.options.HTTPClient))
+		if err != nil {
 			return nil, err
 		}
+		c.providers.Add(config.ID, cachedProvider{
+			instance:    instance,
+			fingerprint: fingerprint,
+		})
+		return instance, nil
+	})
+	if err != nil {
+		return nil, err
 	}
-
-	c.providers[config.ID] = cachedProvider{
-		instance:    instance,
-		fingerprint: fingerprint,
-	}
-	return instance, nil
+	return value.(Provider), nil
 }
 
 // Get returns the provider cached under id.
@@ -100,9 +104,7 @@ func (c *Cache) Get(id ulid.ULID) (Provider, error) {
 		return nil, errors.ErrProviderIDRequired
 	}
 
-	c.mu.RLock()
-	cached, ok := c.providers[id]
-	c.mu.RUnlock()
+	cached, ok := c.providers.Get(id)
 	if !ok {
 		return nil, fmt.Errorf("%w: %s", errors.ErrProviderNotFound, id)
 	}
@@ -112,9 +114,5 @@ func (c *Cache) Get(id ulid.ULID) (Provider, error) {
 // Remove deletes a cached provider and reports whether it existed. Previously
 // retrieved instances remain usable; removal does not close the provider.
 func (c *Cache) Remove(id ulid.ULID) bool {
-	c.mu.Lock()
-	defer c.mu.Unlock()
-	_, exists := c.providers[id]
-	delete(c.providers, id)
-	return exists
+	return c.providers.Remove(id)
 }

@@ -8,6 +8,7 @@ import (
 	"github.com/stretchr/testify/require"
 	"go.rtnl.ai/horizon/errors"
 	"go.rtnl.ai/horizon/provider/auth"
+	"go.yaml.in/yaml/v3"
 	"golang.org/x/oauth2"
 )
 
@@ -155,8 +156,9 @@ func TestCredentialsNormalize(t *testing.T) {
 
 	for _, tc := range tests {
 		t.Run(tc.name, func(t *testing.T) {
-			tc.in.Normalize()
 			require.Equal(t, tc.want.Type(), tc.in.Type())
+			assertCredentialFieldsEqual(t, tc.want, tc.in)
+			tc.in.Normalize()
 			assertCredentialFieldsEqual(t, tc.want, tc.in)
 		})
 	}
@@ -186,6 +188,37 @@ func TestCredentialsJSONRoundTrip(t *testing.T) {
 	require.Equal(t, wantKey, key)
 	require.Equal(t, wantOrg, org)
 	require.Equal(t, wantProject, project)
+}
+
+// Ensures that normalization happens during unmarshalling.
+func TestCredentialsUnmarshalNormalizes(t *testing.T) {
+	t.Run("JSON", func(t *testing.T) {
+		var credentials auth.Credentials
+		require.NoError(t, json.Unmarshal([]byte(`{"type":"api_key","api_key":" secret "}`), &credentials))
+		require.NoError(t, credentials.Validate())
+		key, err := credentials.APIKey()
+		require.NoError(t, err)
+		require.Equal(t, "secret", key)
+	})
+
+	t.Run("YAML", func(t *testing.T) {
+		var credentials auth.Credentials
+		require.NoError(t, yaml.Unmarshal([]byte("type: api_key\napikey: ' secret '\n"), &credentials))
+		require.NoError(t, credentials.Validate())
+		key, err := credentials.APIKey()
+		require.NoError(t, err)
+		require.Equal(t, "secret", key)
+	})
+}
+
+// Ensure that credentials are rejected during validation if not normalized.
+func TestCredentialsRejectUnnormalizedValuesWithoutMutating(t *testing.T) {
+	credentials := auth.NewUnnormalizedForTest(auth.TypeAPIKey, " secret ")
+
+	errors.RequireValidationFields(t, credentials.Validate(), "normalization")
+	key, err := credentials.APIKey()
+	require.NoError(t, err)
+	require.Equal(t, " secret ", key)
 }
 
 func assertCredentialFieldsEqual(t *testing.T, want, got *auth.Credentials) {

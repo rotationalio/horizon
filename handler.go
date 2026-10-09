@@ -8,6 +8,7 @@ import (
 	"net/http"
 	"strings"
 
+	"go.rtnl.ai/horizon/errors"
 	"go.rtnl.ai/horizon/task"
 	"go.rtnl.ai/x/api"
 	"go.rtnl.ai/x/mime"
@@ -21,6 +22,11 @@ type Handler struct {
 
 // Implements http.Handler; Gin can adapt it with gin.WrapH.
 var _ http.Handler = (*Handler)(nil)
+
+// Router returns the handler's router so callers can add, replace, or remove routes.
+func (h *Handler) Router() *task.Router {
+	return &h.router
+}
 
 // ServeHTTP decodes input, executes the routed task, and writes its output.
 func (h *Handler) ServeHTTP(w http.ResponseWriter, r *http.Request) {
@@ -46,13 +52,13 @@ func (h *Handler) ServeHTTP(w http.ResponseWriter, r *http.Request) {
 	}
 
 	if output, err = h.horizon.Run(r.Context(), input, tsk); err != nil {
-		replyJSON(w, api.Error(err), http.StatusInternalServerError)
+		replyJSON(w, api.Error(errors.ErrTaskExecutionFailed), http.StatusInternalServerError)
 		return
 	}
 
 	// Write the output to the response.
 	if err = replyOutput(w, output); err != nil {
-		replyJSON(w, api.Error(err), http.StatusInternalServerError)
+		replyJSON(w, api.Error(errors.ErrTaskExecutionFailed), http.StatusInternalServerError)
 		return
 	}
 
@@ -161,9 +167,4 @@ func replyJSON(w http.ResponseWriter, reply api.Reply, status int) {
 	w.Header().Set("Content-Type", "application/json")
 	w.WriteHeader(status)
 	json.NewEncoder(w).Encode(reply)
-}
-
-// Router returns the handler's router so callers can add, replace, or remove routes.
-func (h *Handler) Router() *task.Router {
-	return &h.router
 }

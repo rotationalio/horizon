@@ -5,12 +5,9 @@
 package openai
 
 import (
-	stdhttp "net/http"
-
 	oai "github.com/openai/openai-go/v3"
 	"github.com/openai/openai-go/v3/option"
 	"go.rtnl.ai/horizon/errors"
-	"go.rtnl.ai/horizon/http"
 	"go.rtnl.ai/horizon/provider"
 	"go.rtnl.ai/horizon/provider/auth"
 	"go.rtnl.ai/horizon/version"
@@ -23,20 +20,11 @@ var defaultOptions = []option.RequestOption{
 	option.WithMaxRetries(0),                             // Horizon handles retries internally.
 }
 
-// New creates an OpenAI client from the Horizon configuration using the shared default HTTP client.
-func New(conf provider.Config) (*oai.Client, error) {
-	return NewWithHTTPClient(conf, nil)
-}
-
-// NewWithHTTPClient creates an OpenAI client using client. A nil client uses Horizon's default.
-func NewWithHTTPClient(conf provider.Config, client *stdhttp.Client) (*oai.Client, error) {
-	if client == nil {
-		client = http.DefaultClient
-	}
-
+// New creates an OpenAI client from the provider configuration and resolved provider options.
+func New(conf provider.Config, options provider.Options) (*oai.Client, error) {
 	opts := make([]option.RequestOption, 0, len(defaultOptions)+6)
 	opts = append(opts, defaultOptions...)
-	opts = append(opts, option.WithHTTPClient(client))
+	opts = append(opts, option.WithHTTPClient(options.HTTPClient))
 
 	// Add the endpoint to the options. If not set, the client will use the default
 	// endpoint, which might come from environment variables (via the sdk).

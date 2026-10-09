@@ -3,11 +3,11 @@ package provider
 import (
 	"crypto/sha256"
 	"fmt"
-	stdhttp "net/http"
 
 	lru "github.com/hashicorp/golang-lru/v2"
 	"go.rtnl.ai/horizon/config"
 	"go.rtnl.ai/horizon/errors"
+
 	"go.rtnl.ai/ulid"
 	"golang.org/x/sync/singleflight"
 )
@@ -15,9 +15,9 @@ import (
 // Cache stores configured provider instances for an application.
 // Construct caches with [NewCache].
 type Cache struct {
-	providers  *lru.Cache[ulid.ULID, cachedProvider]
-	httpClient *stdhttp.Client
-	creating   singleflight.Group
+	providers *lru.Cache[ulid.ULID, cachedProvider]
+	options   Options
+	creating  singleflight.Group
 }
 
 type cachedProvider struct {
@@ -25,16 +25,9 @@ type cachedProvider struct {
 	fingerprint [sha256.Size]byte
 }
 
-// NewCache creates an empty provider cache that uses provider implementations'
-// default HTTP clients and the configured provider cache capacity.
-func NewCache() (*Cache, error) {
-	return NewCacheWithHTTPClient(nil)
-}
-
-// NewCacheWithHTTPClient creates an empty provider cache that passes client to
-// constructed providers and uses the configured provider cache capacity. A nil
-// client lets each provider use its default client.
-func NewCacheWithHTTPClient(client *stdhttp.Client) (*Cache, error) {
+// NewCache creates an empty provider cache using the configured cache capacity
+// and provider options.
+func NewCache(options ...Option) (*Cache, error) {
 	conf, err := config.Get()
 	if err != nil {
 		return nil, fmt.Errorf("load provider cache configuration: %w", err)
@@ -44,7 +37,7 @@ func NewCacheWithHTTPClient(client *stdhttp.Client) (*Cache, error) {
 	if err != nil {
 		return nil, fmt.Errorf("create provider cache: %w", err)
 	}
-	return &Cache{providers: providers, httpClient: client}, nil
+	return &Cache{providers: providers, options: ResolveOptions(options...)}, nil
 }
 
 // GetOrCreate returns the instance matching config, constructing and caching it
@@ -89,7 +82,7 @@ func (c *Cache) GetOrCreate(config Config, instance Provider) (Provider, error) 
 			return cached.instance, nil
 		}
 
-		instance, err := NewWithHTTPClient(config, c.httpClient)
+		instance, err := New(config, WithHTTPClient(c.options.HTTPClient))
 		if err != nil {
 			return nil, err
 		}

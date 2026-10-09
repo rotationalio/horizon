@@ -3,7 +3,6 @@ package openai
 import (
 	"context"
 	"encoding/base64"
-	stdhttp "net/http"
 
 	"fmt"
 	"strconv"
@@ -19,6 +18,7 @@ import (
 	"go.rtnl.ai/horizon/prompts"
 	"go.rtnl.ai/horizon/provider"
 	"go.rtnl.ai/horizon/schema"
+
 	"go.rtnl.ai/x/mime"
 )
 
@@ -31,18 +31,13 @@ type ChatCompletionsClient struct {
 	client *openai.Client
 }
 
-// NewChatCompletions creates a client from the given configuration using Horizon's default HTTP client.
-func NewChatCompletions(conf provider.Config) (*ChatCompletionsClient, error) {
-	return NewChatCompletionsWithHTTPClient(conf, nil)
-}
-
-// NewChatCompletionsWithHTTPClient creates a client using the supplied HTTP client.
-func NewChatCompletionsWithHTTPClient(conf provider.Config, client *stdhttp.Client) (cc *ChatCompletionsClient, err error) {
-	cc = &ChatCompletionsClient{}
-	if cc.client, err = NewWithHTTPClient(conf, client); err != nil {
+// NewChatCompletions creates a client from the configuration and resolved provider options.
+func NewChatCompletions(conf provider.Config, options provider.Options) (*ChatCompletionsClient, error) {
+	client, err := New(conf, options)
+	if err != nil {
 		return nil, err
 	}
-	return cc, nil
+	return &ChatCompletionsClient{client: client}, nil
 }
 
 // Generates a response from the OpenAI Chat Completions API.

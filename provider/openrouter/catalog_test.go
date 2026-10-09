@@ -334,7 +334,7 @@ func testCatalogClient(t *testing.T) *openrouter.CatalogClient {
 
 	client, err := openrouter.NewCatalog(provider.Config{
 		CatalogEndpoint: "https://openrouter.ai/api/v1/models",
-	})
+	}, provider.ResolveOptions())
 	require.NoError(t, err)
 	return client
 }
@@ -366,7 +366,7 @@ func testCatalogClientWithServer(t *testing.T) (*openrouter.CatalogClient, strin
 	client, err := openrouter.NewCatalog(provider.Config{
 		CatalogEndpoint: ts.URL + "/api/v1/models",
 		Credentials:     auth.NewAPIKey("test-key"),
-	})
+	}, provider.ResolveOptions())
 	require.NoError(t, err)
 	return client, ts.URL
 }

@@ -3,7 +3,6 @@ package openai
 import (
 	"context"
 	"encoding/json"
-	stdhttp "net/http"
 
 	"fmt"
 	"strconv"
@@ -20,6 +19,7 @@ import (
 	"go.rtnl.ai/horizon/prompts"
 	"go.rtnl.ai/horizon/provider"
 	"go.rtnl.ai/horizon/schema"
+
 	"go.rtnl.ai/x/mime"
 )
 
@@ -32,18 +32,13 @@ type ResponsesClient struct {
 	client *openai.Client
 }
 
-// NewResponses creates a client from the given configuration using Horizon's default HTTP client.
-func NewResponses(conf provider.Config) (*ResponsesClient, error) {
-	return NewResponsesWithHTTPClient(conf, nil)
-}
-
-// NewResponsesWithHTTPClient creates a client using the supplied HTTP client.
-func NewResponsesWithHTTPClient(conf provider.Config, client *stdhttp.Client) (rc *ResponsesClient, err error) {
-	rc = &ResponsesClient{}
-	if rc.client, err = NewWithHTTPClient(conf, client); err != nil {
+// NewResponses creates a client from the configuration and resolved provider options.
+func NewResponses(conf provider.Config, options provider.Options) (*ResponsesClient, error) {
+	client, err := New(conf, options)
+	if err != nil {
 		return nil, err
 	}
-	return rc, nil
+	return &ResponsesClient{client: client}, nil
 }
 
 // Generates a response from the OpenAI Responses API.

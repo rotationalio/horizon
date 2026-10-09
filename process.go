@@ -14,6 +14,7 @@ import (
 	"go.rtnl.ai/horizon/attachments"
 	"go.rtnl.ai/horizon/config"
 	"go.rtnl.ai/horizon/errors"
+
 	"go.rtnl.ai/horizon/prompts"
 	"go.rtnl.ai/horizon/provider"
 	"go.rtnl.ai/horizon/task"
@@ -145,7 +146,7 @@ func (p *process) Prepare(ctx context.Context) (err error) {
 	// TODO: Validate that the provider can handle the task.
 
 	if p.horizon == nil {
-		p.provider, err = provider.NewWithHTTPClient(*p.task.Provider, p.httpClient)
+		p.provider, err = provider.New(*p.task.Provider, provider.WithHTTPClient(p.httpClient))
 	} else {
 		p.provider, err = p.horizon.providers.GetOrCreate(*p.task.Provider, nil)
 	}

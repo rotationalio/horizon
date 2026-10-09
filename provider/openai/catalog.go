@@ -3,7 +3,7 @@ package openai
 import (
 	"context"
 	"encoding/json"
-	stdhttp "net/http"
+
 	"time"
 
 	"go.rtnl.ai/horizon/http"
@@ -24,14 +24,9 @@ type CatalogClient struct {
 	endpoint *http.Endpoint
 }
 
-// NewCatalog creates an OpenAI catalog client using Horizon's default HTTP client.
-func NewCatalog(conf provider.Config) (*CatalogClient, error) {
-	return NewCatalogWithHTTPClient(conf, nil)
-}
-
-// NewCatalogWithHTTPClient creates an OpenAI catalog client using client.
-func NewCatalogWithHTTPClient(conf provider.Config, client *stdhttp.Client) (*CatalogClient, error) {
-	endpoint, err := http.NewEndpoint(conf.CatalogEndpoint, client, conf.Credentials)
+// NewCatalog creates an OpenAI catalog client using the resolved provider options.
+func NewCatalog(conf provider.Config, options provider.Options) (*CatalogClient, error) {
+	endpoint, err := http.NewEndpoint(conf.CatalogEndpoint, options.HTTPClient, conf.Credentials)
 	if err != nil {
 		return nil, err
 	}

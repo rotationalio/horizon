@@ -78,7 +78,7 @@ func TestFetchLive(t *testing.T) {
 	client, err := openai.NewCatalog(provider.Config{
 		CatalogEndpoint: "https://api.openai.com/v1/models",
 		Credentials:     auth.NewAPIKey(apiKey),
-	})
+	}, provider.ResolveOptions())
 	require.NoError(t, err)
 
 	ctx, cancel := context.WithTimeout(context.Background(), testenv.LiveRequestTimeout)
@@ -183,7 +183,7 @@ func testCatalogClientWithServer(t *testing.T) *openai.CatalogClient {
 	client, err := openai.NewCatalog(provider.Config{
 		CatalogEndpoint: ts.URL + "/v1/models",
 		Credentials:     auth.NewAPIKey("test-key"),
-	})
+	}, provider.ResolveOptions())
 	require.NoError(t, err)
 	return client
 }

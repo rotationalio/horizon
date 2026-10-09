@@ -31,7 +31,7 @@ func TestChatIntegration(t *testing.T) {
 		InferenceEndpoint: testenv.OpenRouterEndpointURL(t),
 	}
 
-	client, err := openai.NewChatCompletions(conf)
+	client, err := openai.NewChatCompletions(conf, provider.ResolveOptions())
 	require.NoError(t, err)
 
 	t.Run("Simple", func(t *testing.T) {

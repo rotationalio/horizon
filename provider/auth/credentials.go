@@ -8,8 +8,8 @@ import (
 	"time"
 
 	"go.rtnl.ai/x/validation"
+	"go.yaml.in/yaml/v3"
 	"golang.org/x/oauth2"
-	"gopkg.in/yaml.v3"
 )
 
 // An implementation of [Credential]. Create a new [Credentials] using auth.New*

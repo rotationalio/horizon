@@ -227,7 +227,8 @@ func TestProcessRunRejectsMalformedJSONOutput(t *testing.T) {
 
 	require.ErrorIs(t, err, errors.ErrInvalidModelOutput)
 	require.NotNil(t, output)
-	require.Nil(t, output.Output)
+	require.Equal(t, `{"answer":`, output.Output)
+	require.ErrorContains(t, err, "unexpected end of JSON input")
 	require.Equal(t, uint64(1), output.Usage.Invocations)
 }
 
@@ -489,6 +490,7 @@ func TestProcessRunCaptureResponse(t *testing.T) {
 			schema: &schema.Schema{
 				MimeType: mime.ApplicationJSON,
 			},
+			want:    `{"answer":`,
 			wantErr: errors.ErrInvalidModelOutput,
 		},
 		{
@@ -497,6 +499,7 @@ func TestProcessRunCaptureResponse(t *testing.T) {
 			schema: &schema.Schema{
 				MimeType: mime.ApplicationSchemaJSON,
 			},
+			want:    "```json\n{}\n```",
 			wantErr: errors.ErrInvalidModelOutput,
 		},
 		{
@@ -505,6 +508,7 @@ func TestProcessRunCaptureResponse(t *testing.T) {
 			schema: &schema.Schema{
 				MimeType: mime.ApplicationJSON,
 			},
+			want:    `{} {}`,
 			wantErr: errors.ErrInvalidModelOutput,
 		},
 	}
@@ -725,7 +729,11 @@ func TestProcessRunGenerationFailures(t *testing.T) {
 					for _, want := range tt.wantErrors {
 						require.ErrorIs(t, executionErr, want)
 					}
-					require.Nil(t, output.Output)
+					if tt.malformedJSON && tt.guardErr == nil && !tt.cancelProvider && !tt.cancelGuard {
+						require.Equal(t, `{"answer":`, output.Output)
+					} else {
+						require.Nil(t, output.Output)
+					}
 					return nil
 				},
 			}
@@ -752,7 +760,11 @@ func TestProcessRunGenerationFailures(t *testing.T) {
 				wantOutcome = task.OutcomeCancelled
 			}
 			require.Equal(t, wantOutcome, output.Outcome)
-			require.Nil(t, output.Output)
+			if tt.malformedJSON && tt.guardErr == nil && !tt.cancelProvider && !tt.cancelGuard {
+				require.Equal(t, `{"answer":`, output.Output)
+			} else {
+				require.Nil(t, output.Output)
+			}
 
 			// Count the attempted call, but only account tokens and cost from a returned response.
 			require.Equal(t, uint64(1), output.Usage.Invocations)

@@ -32,16 +32,22 @@ type Horizon struct {
 }
 
 // New creates a Horizon using factory for embedded and HTTP executions.
-func New(factory RunnerFactory) (*Horizon, error) {
+func New(factory RunnerFactory, options ...Option) (*Horizon, error) {
 	conf, err := config.Get()
 	if err != nil {
 		return nil, fmt.Errorf("load Horizon configuration: %w", err)
 	}
 
-	client := http.New()
-	client.Timeout = conf.HTTPClientTimeout
+	resolved := ResolveOptions(options...)
+	client := resolved.HTTPClient
+	if client == nil {
+		client, err = http.New()
+		if err != nil {
+			return nil, err
+		}
+	}
 
-	providers, err := provider.NewCacheWithHTTPClient(client)
+	providers, err := provider.NewCache(provider.WithHTTPClient(client))
 	if err != nil {
 		return nil, fmt.Errorf("create provider cache: %w", err)
 	}
@@ -110,8 +116,10 @@ func Run(ctx context.Context, input *task.Input, tsk *task.Task, runner task.Run
 		return nil, fmt.Errorf("load Horizon configuration: %w", err)
 	}
 
-	client := http.New()
-	client.Timeout = conf.HTTPClientTimeout
+	client, err := http.New()
+	if err != nil {
+		return nil, err
+	}
 
 	ctx, cancel := withExecutionTimeout(ctx, conf.ExecutionTimeout)
 	defer cancel()

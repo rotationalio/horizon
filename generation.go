@@ -152,12 +152,16 @@ func (p *process) captureResponse(response *provider.Response) error {
 
 	switch p.task.Output.Schema.MimeType {
 	case mime.ApplicationJSON, mime.ApplicationSchemaJSON:
-		// Reject malformed JSON before returning it as structured output.
-		if !json.Valid([]byte(text)) {
-			return fmt.Errorf("%w: invalid JSON response", errors.ErrInvalidModelOutput)
+		// TODO: Normalize model output before parsing, including JSON wrapped in Markdown code fences.
+		var raw json.RawMessage
+		if err := json.Unmarshal([]byte(text), &raw); err != nil {
+			// Return the raw text as-is if the JSON is invalid so that the
+			// caller may debug if necessary.
+			p.output.Output = text
+			return fmt.Errorf("%w: invalid JSON response: %w", errors.ErrInvalidModelOutput, err)
 		}
 		// TODO: Validate the JSON result against the task's declared JSON Schema, not just its syntax.
-		p.output.Output = json.RawMessage(text)
+		p.output.Output = raw
 		p.output.MimeType = mime.ApplicationJSON
 	case mime.TextPlain:
 		p.output.Output = text

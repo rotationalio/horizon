@@ -215,7 +215,7 @@ func TestResponsesIntegration(t *testing.T) {
 		InferenceEndpoint: testenv.OpenRouterEndpointURL(t),
 	}
 
-	client, err := openai.NewResponses(conf)
+	client, err := openai.NewResponses(conf, provider.ResolveOptions())
 	require.NoError(t, err)
 
 	t.Run("Simple", func(t *testing.T) {

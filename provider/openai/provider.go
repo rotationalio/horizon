@@ -1,9 +1,8 @@
 package openai
 
 import (
-	stdhttp "net/http"
-
 	"go.rtnl.ai/horizon/errors"
+
 	"go.rtnl.ai/horizon/provider"
 	"go.rtnl.ai/horizon/provider/auth"
 	"go.rtnl.ai/ulid"
@@ -25,12 +24,12 @@ func (p *Provider) ID() ulid.ULID {
 
 func init() {
 	provider.Register(provider.ProviderTypeOpenAI, provider.Registration{
-		Factory:   NewProviderWithHTTPClient,
+		Factory:   NewProvider,
 		APITypes:  []provider.APIType{provider.APITypeOpenAIResponses, provider.APITypeOpenAIChatCompletions},
 		AuthTypes: []auth.Type{auth.TypeAPIKey, auth.TypeOpenAIOrganization},
 	})
 	provider.Register(provider.ProviderTypeOpenAICompatible, provider.Registration{
-		Factory: NewProviderWithHTTPClient,
+		Factory: NewProvider,
 		// OpenAI compatible has CC as the first (should be treated as primary/default)
 		// because most local providers support CC. Responses is the preferred API
 		// overall in most cases, however.
@@ -43,28 +42,23 @@ func init() {
 	})
 }
 
-// NewProvider constructs an OpenAI or OpenAI-compatible provider using Horizon's default HTTP client.
-func NewProvider(conf provider.Config) (provider.Provider, error) {
-	return NewProviderWithHTTPClient(conf, nil)
-}
-
-// NewProviderWithHTTPClient constructs a provider using the supplied HTTP client.
-func NewProviderWithHTTPClient(conf provider.Config, httpClient *stdhttp.Client) (p provider.Provider, err error) {
+// NewProvider constructs an OpenAI or OpenAI-compatible provider using the supplied options.
+func NewProvider(conf provider.Config, options provider.Options) (p provider.Provider, err error) {
 	client := &Provider{id: conf.ID}
 	switch conf.APIType {
 	case provider.APITypeOpenAIResponses:
-		if client.Generator, err = NewResponsesWithHTTPClient(conf, httpClient); err != nil {
+		if client.Generator, err = NewResponses(conf, options); err != nil {
 			return nil, err
 		}
 	case provider.APITypeOpenAIChatCompletions:
-		if client.Generator, err = NewChatCompletionsWithHTTPClient(conf, httpClient); err != nil {
+		if client.Generator, err = NewChatCompletions(conf, options); err != nil {
 			return nil, err
 		}
 	default:
 		return nil, errors.ErrUnsupportedAPIType
 	}
 
-	if client.CatalogClient, err = NewCatalogWithHTTPClient(conf, httpClient); err != nil {
+	if client.CatalogClient, err = NewCatalog(conf, options); err != nil {
 		return nil, err
 	}
 	return client, nil

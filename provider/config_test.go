@@ -11,8 +11,8 @@ import (
 	"go.rtnl.ai/horizon/provider/auth"
 	"go.rtnl.ai/ulid"
 	"go.rtnl.ai/x/validation"
+	"go.yaml.in/yaml/v3"
 	"golang.org/x/oauth2"
-	"gopkg.in/yaml.v3"
 )
 
 // Verifies provider configuration validation accepts supported combinations and

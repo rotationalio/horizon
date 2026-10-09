@@ -8,8 +8,8 @@ import (
 	"github.com/stretchr/testify/require"
 	"go.rtnl.ai/horizon/errors"
 	"go.rtnl.ai/horizon/provider/auth"
+	"go.yaml.in/yaml/v3"
 	"golang.org/x/oauth2"
-	"gopkg.in/yaml.v3"
 )
 
 // Verifies every credential variant accepts required fields, rejects missing

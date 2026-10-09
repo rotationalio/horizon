@@ -2,9 +2,9 @@ package mock
 
 import (
 	"context"
-	stdhttp "net/http"
 
 	"go.rtnl.ai/horizon/errors"
+
 	"go.rtnl.ai/horizon/internal/mock"
 	"go.rtnl.ai/horizon/provider"
 	"go.rtnl.ai/horizon/provider/auth"
@@ -34,7 +34,7 @@ var _ provider.Provider = (*MockProvider)(nil)
 
 func init() {
 	provider.Register(provider.ProviderTypeMock, provider.Registration{
-		Factory: func(config provider.Config, _ *stdhttp.Client) (provider.Provider, error) {
+		Factory: func(config provider.Config, _ provider.Options) (provider.Provider, error) {
 			return New(config.ID), nil
 		},
 		APITypes: []provider.APIType{

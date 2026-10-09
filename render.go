@@ -1,6 +1,7 @@
 package horizon
 
 import (
+	"context"
 	"log/slog"
 	"sort"
 	"sync"
@@ -8,6 +9,7 @@ import (
 	"go.rtnl.ai/horizon/config"
 	"go.rtnl.ai/horizon/prompts"
 	"go.rtnl.ai/horizon/render"
+	"go.rtnl.ai/x/rlog"
 )
 
 var (
@@ -18,14 +20,14 @@ var (
 
 // The default renderer uses a cache to avoid repeated parsing of the same template.
 // NOTE: that the data context is passed to every single prompt template.
-func Render(templates prompts.Templates, context prompts.Context) (input prompts.Prompts, err error) {
+func Render(templates prompts.Templates, ctx prompts.Context) (input prompts.Prompts, err error) {
 	// Ensure the renderer cache is initialized only once.
 	renderInit.Do(func() {
 		conf, _ := config.Get()
 		size := conf.RendererCacheSize
 
 		if rendererCache, renderErr = render.NewCache(size, nil); renderErr != nil {
-			slog.Error("could not initialize renderer cache", slog.Any("error", renderErr))
+			rlog.ErrorAttrs(context.Background(), "could not initialize renderer cache", slog.Any("error", renderErr))
 		}
 	})
 
@@ -37,7 +39,7 @@ func Render(templates prompts.Templates, context prompts.Context) (input prompts
 	input = make(prompts.Prompts, 0, len(templates))
 	for _, prompt := range templates {
 		var rendered string
-		if rendered, err = rendererCache.Render(prompt.Renderer, prompt.Content, context); err != nil {
+		if rendered, err = rendererCache.Render(prompt.Renderer, prompt.Content, ctx); err != nil {
 			return nil, err
 		}
 

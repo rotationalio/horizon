@@ -4,6 +4,7 @@ import (
 	"context"
 	"fmt"
 	"io"
+	"log/slog"
 	stdhttp "net/http"
 	"strings"
 
@@ -11,6 +12,7 @@ import (
 	"go.rtnl.ai/horizon/errors"
 	"go.rtnl.ai/horizon/provider/auth"
 	"go.rtnl.ai/horizon/version"
+	"go.rtnl.ai/x/rlog"
 )
 
 // Export selected standard-library functions so callers do not need to import
@@ -19,18 +21,27 @@ import (
 // policies, including URL and redirect validation for SSRF prevention.
 var (
 	NewRequestWithContext = stdhttp.NewRequestWithContext
-	DefaultClient         = New()
+	DefaultClient         = defaultClient()
 )
 
 // A JSON object is a map of string keys to any values.
 type JSON map[string]any
 
 // New returns a fresh HTTP client using the configured HTTP timeout.
-func New() *stdhttp.Client {
+func New() (*stdhttp.Client, error) {
 	conf, err := config.Get()
-	client := &stdhttp.Client{Transport: stdhttp.DefaultTransport}
-	if err == nil {
-		client.Timeout = conf.HTTPClientTimeout
+	if err != nil {
+		return nil, fmt.Errorf("load HTTP client configuration: %w", err)
+	}
+	return &stdhttp.Client{Transport: stdhttp.DefaultTransport, Timeout: conf.HTTPClientTimeout}, nil
+}
+
+// Returns the default HTTP client, which is configured from the environment.
+func defaultClient() *stdhttp.Client {
+	client, err := New()
+	if err != nil {
+		rlog.WarnAttrs(context.Background(), "could not load HTTP client configuration; using default timeout", slog.Any("error", err))
+		return &stdhttp.Client{Transport: stdhttp.DefaultTransport}
 	}
 	return client
 }

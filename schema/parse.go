@@ -46,6 +46,8 @@ func (p *BestEffortParser) Parse(text string, schema *Schema) (any, error) {
 			text = content
 		} else if content, ok := findContent(text, "[", "]"); ok {
 			text = content
+		} else if content, ok := findContent(text, "\"", "\""); ok {
+			text = content
 		}
 
 		// TODO: Validate the JSON data against the schema.

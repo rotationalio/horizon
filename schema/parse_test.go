@@ -95,7 +95,7 @@ func TestBestEffortParser(t *testing.T) {
 			err:      errors.New("could not unmarshal JSON data"),
 		},
 		{
-			input:    "{ \"foo\": ",
+			input:    "{ \"foo\": \"bar",
 			mimeType: mime.ApplicationJSON,
 			err:      errors.New("could not unmarshal JSON data"),
 		},
@@ -113,6 +113,11 @@ func TestBestEffortParser(t *testing.T) {
 			input:    "This is a JSON array: [1,2,3]",
 			mimeType: mime.ApplicationJSON,
 			expected: json.RawMessage(`[1,2,3]`),
+		},
+		{
+			input:    "This is a JSON string: \"foo\"",
+			mimeType: mime.ApplicationJSON,
+			expected: json.RawMessage(`"foo"`),
 		},
 	}
 

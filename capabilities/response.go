@@ -2,124 +2,56 @@ package capabilities
 
 import (
 	"fmt"
-	"slices"
 
 	"go.rtnl.ai/horizon/prompts"
-	"go.rtnl.ai/x/validation"
 )
 
-// Response is the base result contract for an executed capability.
-type Response interface {
-	// Returns the original call ID from the request.
-	CallID() string
-	// Validates the response.
-	Validate() error
+// ResponseKind identifies the contribution returned after a capability executes.
+type ResponseKind uint8
+
+const (
+	ResoponseKindUnknown ResponseKind = iota
+
+	// Wants a tool message with text-only content. Zero is reserved for invalid responses.
+	ResponseKindToolTextContent
+)
+
+// Response is a concrete, tagged contribution from a capability executor.
+type Response struct {
+	Kind    ResponseKind
+	Content string
+	// TODO: support other types of content than text-only
 }
 
-// ToolResponse contributes a tool role message for a correlated
-// capability call.
-type ToolResponse interface {
-	Response
-	// Returns a tool role prompt with the response text and call correlation.
-	ToolPrompt() *prompts.Prompt
+// NewToolTextContentResponse creates a tool role message with text content for a
+// model-requested tool call.
+func NewToolTextContentResponse(content string) Response {
+	return Response{Kind: ResponseKindToolTextContent, Content: content}
 }
 
-// Constructs a new ToolResponse with the given call ID and text content.
-// TODO: support more than just textual string content here, such as files and binary data.
-func NewToolResponse(callID, text string) ToolResponse {
-	return toolResponse{
-		callID: callID,
-		prompt: &prompts.Prompt{
+// Process converts a contribution into conversation messages correlated to the
+// originating call. The caller supplies a validated call ID; the executor does
+// not control correlation. Unsupported kinds return no messages.
+func (r Response) Process(callID string) (prompts.Prompts, error) {
+	switch r.Kind {
+	case ResponseKindToolTextContent:
+		return prompts.Prompts{{
 			Role: prompts.RoleTool,
 			Type: prompts.TypeMessage,
 			ToolResults: []prompts.ToolResponse{{
 				CallID:  callID,
-				Content: text,
+				Content: r.Content,
 			}},
-		},
+		}}, nil
+	default:
+		return nil, fmt.Errorf("%w: unknown response kind %d", ErrUnsupportedResponse, r.Kind)
 	}
 }
 
-// Implements [ToolResponse].
-type toolResponse struct {
-	callID string
-	prompt *prompts.Prompt
+// Validate rejects response kinds that Horizon does not yet know how to process.
+func (r Response) Validate() error {
+	if r.Kind != ResponseKindToolTextContent {
+		return fmt.Errorf("%w: unknown response kind %d", ErrUnsupportedResponse, r.Kind)
+	}
+	return nil
 }
-
-// Returns the original call ID from the request.
-func (r toolResponse) CallID() string { return r.callID }
-
-// Validates the response.
-func (r toolResponse) Validate() error {
-	var fieldErrors []*validation.FieldError
-	if r.callID == "" {
-		fieldErrors = append(fieldErrors, validation.Missing("call_id"))
-	}
-
-	p := r.prompt
-	if p == nil {
-		fieldErrors = append(fieldErrors, validation.Missing("tool_prompt"))
-	} else {
-		if p.Role != prompts.RoleTool {
-			fieldErrors = append(fieldErrors, validation.Incorrect("role", fmt.Sprintf("expected tool, got %s", p.Role)))
-		}
-		if p.Type != prompts.TypeMessage {
-			fieldErrors = append(fieldErrors, validation.Incorrect("type", fmt.Sprintf("expected message, got %s", p.Type)))
-		}
-		if len(p.ToolResults) != 1 {
-			fieldErrors = append(fieldErrors, validation.Incorrect("tool_results", "must contain exactly one result"))
-		} else if p.ToolResults[0].CallID != r.callID {
-			fieldErrors = append(fieldErrors, validation.Incorrect("tool_results.call_id", "must match call_id"))
-		}
-		if p.Content != "" {
-			fieldErrors = append(fieldErrors, validation.Incorrect("content", "must be empty when tool results are present"))
-		}
-	}
-
-	if len(fieldErrors) == 0 {
-		return nil
-	}
-	return fmt.Errorf("%w: %w", ErrInvalidToolPrompt, validation.Error(nil, fieldErrors...))
-}
-
-// Returns a tool role prompt with the response text.
-func (r toolResponse) ToolPrompt() *prompts.Prompt {
-	return r.prompt
-}
-
-// MergeToolResponses combines multiple tool responses into a single prompt. Nil
-// responses are skipped. Returns nil if no valid responses are provided.
-func MergeToolResponses(responses ...ToolResponse) (*prompts.Prompt, error) {
-	responses = slices.DeleteFunc(responses, func(r ToolResponse) bool {
-		return r == nil
-	})
-	if len(responses) == 0 {
-		return nil, nil
-	}
-
-	toolResults := make([]prompts.ToolResponse, 0, len(responses))
-	seen := make(map[string]struct{}, len(responses))
-	for _, r := range responses {
-		if err := r.Validate(); err != nil {
-			return nil, err
-		}
-		for _, result := range r.ToolPrompt().ToolResults {
-			if _, ok := seen[result.CallID]; ok {
-				return nil, fmt.Errorf("%w: duplicate tool call ID %q", ErrInvalidToolPrompt, result.CallID)
-			}
-			seen[result.CallID] = struct{}{}
-			toolResults = append(toolResults, result)
-		}
-	}
-
-	return &prompts.Prompt{
-		Role:        prompts.RoleTool,
-		Type:        prompts.TypeMessage,
-		ToolResults: toolResults,
-	}, nil
-}
-
-// For the future, these are some other types we might want to use:
-// TODO: UserMessageResponse: adds a user role message (useful for MCP prompts and for adding general text-based message context)
-// TODO: InputAttachmentResponse: adds an Attachment (a file) to the input for the next round of inference
-// TODO: OutputAttachmentResponse: adds an Attachment (a file) to the output for the user

@@ -49,6 +49,17 @@ func (p *Params) Clone() *Params {
 	return &Params{params: maps.Clone(p.params)}
 }
 
+// ProviderOnly clones the parameters without Horizon-only execution settings.
+// Provider-specific extension parameters are retained, and values follow Clone's
+// ownership rules. A nil receiver returns nil.
+func (p *Params) ProviderOnly() *Params {
+	cloned := p.Clone()
+	if cloned != nil {
+		cloned.Del(MaxToolTurns)
+	}
+	return cloned
+}
+
 // Set a key-value pair in the params map, normalizing the key before storing it.
 func (p *Params) Set(key string, value any) {
 	p.params[normalize(key)] = value

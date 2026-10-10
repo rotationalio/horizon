@@ -22,10 +22,10 @@ var (
 
 	// Capability tool-loop errors
 	ErrCapabilityProviderRequired = errors.New("capability provider is required for tool calls")
-	ErrToolCallInvalid            = errors.New("tool call arguments are invalid")
-	ErrToolCallIDRequired         = errors.New("tool call ID is required")
-	ErrToolNotAdvertised          = errors.New("tool call was not advertised")
 	ErrMaxToolTurns               = errors.New("maximum tool turns exceeded")
+	ErrToolCallIDRequired         = errors.New("tool call ID is required")
+	ErrToolCallInvalid            = errors.New("tool call arguments are invalid")
+	ErrToolNotAdvertised          = errors.New("tool call was not advertised")
 
 	// HTTP-related errors
 	ErrBaseEndpointRequired      = errors.New("base endpoint is required")
@@ -34,14 +34,23 @@ var (
 
 	// Task-related errors
 	ErrRunnerRequired             = errors.New("runner is required")
-	ErrTaskExecutionFailed        = errors.New("task execution failed")
 	ErrTaskArchiveBootstrapFailed = errors.New("horizon task archive bootstrap failed")
+	ErrTaskExecutionFailed        = errors.New("task execution failed")
 	ErrTaskModalitiesRequired     = errors.New("task modalities are required")
 	ErrTaskOutputRequired         = errors.New("task output is required")
 	ErrTaskRequired               = errors.New("task is required")
 
+	// Prompt and message conversion errors
+	ErrToolMessageMissingResults = errors.New("tool message must contain tool results")
+	ErrUnsupportedMessageRole    = errors.New("unsupported message role")
+
+	// Attachment errors
+	ErrNilAttachment = errors.New("attachment is nil")
+
 	// Schema-related errors
-	ErrNoJSONSchema = errors.New("cannot derive JSON schema without schema data or URI")
+	ErrInvalidJSONSchema               = errors.New("JSON schema must be an object")
+	ErrNoJSONSchema                    = errors.New("cannot derive JSON schema without schema data or URI")
+	ErrUnsupportedOutputSchemaMimeType = errors.New("unsupported output schema mime type")
 
 	// Provider errors
 	ErrProviderIDMismatch = errors.New("provider ID does not match config ID")
@@ -49,6 +58,13 @@ var (
 	ErrProviderNotFound   = errors.New("provider not found")
 	ErrProviderRequired   = errors.New("provider is required")
 	ErrUnsupportedAPIType = errors.New("unsupported API type")
+
+	// OpenAI provider errors
+	ErrNoChatCompletions                   = errors.New("no chat completions choices returned")
+	ErrNoResponseOutput                    = errors.New("no response output items returned")
+	ErrOpenAIResponsesError                = errors.New("openai responses error")
+	ErrUnsupportedChatCompletionsAudioType = errors.New("unsupported chat completions audio content type")
+	ErrUnsupportedChatToolCallType         = errors.New("unsupported chat completion tool call type")
 
 	// General errors
 	ErrNotImplemented = errors.New("not implemented")

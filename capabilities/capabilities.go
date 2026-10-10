@@ -32,6 +32,12 @@ type Definition struct {
 	InputSchema *schema.Schema
 }
 
+// Clone returns an independent copy of the definition and its input schema.
+func (d Definition) Clone() Definition {
+	d.InputSchema = d.InputSchema.Clone()
+	return d
+}
+
 // Request is a validated capability request passed to the host executor.
 type Request struct {
 	CallID    string

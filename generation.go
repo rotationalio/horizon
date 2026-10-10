@@ -15,14 +15,18 @@ import (
 	"go.rtnl.ai/x/mime"
 )
 
-// Generate performs one inference request.
-func (p *process) Generate(ctx context.Context) error {
-	// Run input guard if implemented.
+// Generate performs one guarded inference turn, accounting usage and appending
+// accepted response messages.
+func (p *process) Generate(ctx context.Context) (*provider.Response, error) {
+	// The process messages are the authoritative transcript, including reasoning.
+	p.request.Input = p.messages
+
+	// Input guards validate a snapshot so that mutations are ignored.
 	if guard, ok := p.runner.(task.InputGuard); ok {
 		if err := cancelAndTrace(ctx, "guard.input", func(context.Context) error {
-			return guard.ProtectInput(p.request)
+			return guard.ProtectInput(p.request.Clone())
 		}); err != nil {
-			return fmt.Errorf("protect inference input: %w", err)
+			return nil, fmt.Errorf("protect inference input: %w", err)
 		}
 	}
 
@@ -39,81 +43,65 @@ func (p *process) Generate(ctx context.Context) error {
 	// A returned response means the provider call completed; keep its accounting
 	// even when the caller canceled before Horizon could deliver the content.
 	if response != nil {
-		p.recordUsage(response.Usage)
+		p.output.Usage.InputTokens += response.Usage.InputTokens
+		p.output.Usage.OutputTokens += response.Usage.OutputTokens
+		p.output.Usage.TotalTokens += response.Usage.TotalTokens
+		p.output.Usage.APICost += response.Usage.APICost
 	}
 
 	if ctx.Err() != nil {
-		// Do not run output guards or capture content after cancellation. The
-		// enclosing cancelAndTrace adds the caller's cancellation to this error.
-		if generateErr != nil {
-			return fmt.Errorf("provider inference failed: %w", generateErr)
-		}
-		return nil
+		return nil, errors.Join(generateErr, ctx.Err())
 	}
 
-	var responseErr error
+	if generateErr != nil {
+		generateErr = fmt.Errorf("provider inference failed: %w", generateErr)
+	}
+
 	if response != nil {
 		// Run the output guard before capturing the response if implemented.
 		if guard, ok := p.runner.(task.OutputGuard); ok {
 			if err := cancelAndTrace(ctx, "guard.output", func(context.Context) error {
 				return guard.ProtectOutput(response)
 			}); err != nil {
-				responseErr = fmt.Errorf("protect inference output: %w", err)
+				return nil, errors.Join(generateErr, fmt.Errorf("protect inference output: %w", err))
 			}
 		}
 
-		// Capture the response.
-		if responseErr == nil {
-			if err := p.captureResponse(response); err != nil {
-				responseErr = fmt.Errorf("process inference response: %w", err)
-			}
+		model := response.Model
+		if model == "" {
+			model = p.task.Model.Slug
 		}
-	} else if generateErr == nil {
-		responseErr = errors.ErrNoModelOutput
+		p.output.Model = task.Model{Slug: model, Parameters: p.task.Model.Parameters}
+		p.output.Attachments = append(p.output.Attachments, response.Attachments...)
+		p.messages = append(p.messages, response.Output...)
+		return response, generateErr
 	}
 
-	// Preserve both provider generation failures and response-guard/decoding
-	// failures.
-	if generateErr != nil {
-		generateErr = fmt.Errorf("provider inference failed: %w", generateErr)
+	// There is a nil response.
+	if generateErr == nil {
+		generateErr = errors.ErrNoModelOutput
 	}
-	return errors.Join(responseErr, generateErr)
+	return nil, generateErr
 }
 
-// Adds the usage from a provider response onto the output usage.
-func (p *process) recordUsage(usage provider.Usage) {
-	p.output.Usage.InputTokens += usage.InputTokens
-	p.output.Usage.OutputTokens += usage.OutputTokens
-	p.output.Usage.TotalTokens += usage.TotalTokens
-	p.output.Usage.APICost += usage.APICost
-}
-
-// Captures a non-nil provider response and stores it in the output.
-func (p *process) captureResponse(response *provider.Response) (err error) {
-
-	// Use the provider's resolved model when available, otherwise keep the
-	// requested slug.
-	model := response.Model
-	if model == "" {
-		model = p.task.Model.Slug
+// captureResponse stores the final answer while preserving any inference error.
+func (p *process) captureResponse(response *provider.Response, inferenceErr error) error {
+	if response == nil {
+		if inferenceErr != nil {
+			return inferenceErr
+		}
+		return errors.ErrNoModelOutput
 	}
-	p.output.Model = task.Model{Slug: model, Parameters: p.task.Model.Parameters}
 
-	// Store the response attachments.
-	p.output.Attachments = append(p.output.Attachments, response.Attachments...)
-
-	// Only assistant text is task output. Tool calls belong to the separate capabilities loop.
+	// Only assistant text is task output; capability calls belong to CapabilitiesLoop.
 	var finalContent, unphasedContent []string
 	for _, message := range response.Output {
-		if message == nil || message.Role != prompts.RoleAssistant {
+		if message == nil || message.Role != prompts.RoleAssistant || message.Type == prompts.TypeReasoning {
 			continue
 		}
-
 		if message.Type == prompts.TypeToolCall || len(message.ToolCalls) > 0 {
-			// TODO: handle tool calls
-			return errors.ErrCapabilityProviderRequired
+			return errors.Join(inferenceErr, errors.ErrCapabilityProviderRequired)
 		}
-
 		if message.Content == "" {
 			continue
 		}
@@ -131,30 +119,28 @@ func (p *process) captureResponse(response *provider.Response) (err error) {
 	if len(content) == 0 {
 		content = unphasedContent
 	}
-
 	if len(content) == 0 {
-		// An attachment-only response is still a usable result.
 		if len(response.Attachments) > 0 {
-			return nil
+			return inferenceErr
 		}
-		return errors.ErrNoModelOutput
+		return errors.Join(inferenceErr, errors.ErrNoModelOutput)
 	}
-
 	text := strings.Join(content, "\n")
 
-	// If there is no output schema, just return the raw text.
+	// Return the text as plain text if there is no schema requirement.
 	if p.task.Output.Schema == nil || p.task.Output.Schema.MimeType.IsUnknown() {
 		p.output.MimeType = mime.TextPlain
 		p.output.Output = text
-		return nil
+		return inferenceErr
 	}
 
-	// Parse the output into the destination schema.
-	// If there is a parsing error, return the raw text for auditing purposes.
-	if p.output.Output, err = p.parser.Parse(text, p.task.Output.Schema); err != nil {
+	// Parse the text against the schema, retaining raw text on failure.
+	parsed, err := p.parser.Parse(text, p.task.Output.Schema)
+	if err != nil {
 		p.output.Output = text
-		return errors.Join(errors.ErrInvalidModelOutput, err)
+		return errors.Join(inferenceErr, errors.ErrInvalidModelOutput, err)
 	}
+	p.output.Output = parsed
 	p.output.MimeType = p.task.Output.Schema.MimeType
-	return nil
+	return inferenceErr
 }

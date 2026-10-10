@@ -45,6 +45,7 @@ func Render(templates Templates, ctx Context) (input Prompts, err error) {
 		input = append(input, &Prompt{
 			Index:   prompt.Index,
 			Role:    prompt.Role,
+			Type:    TypeMessage,
 			Content: rendered,
 		})
 	}

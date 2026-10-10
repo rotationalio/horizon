@@ -24,17 +24,59 @@ func TestAttachmentData(t *testing.T) {
 		Data:        []byte("hello"),
 	}
 
-	data, err := attachment.Bytes()
+	data, err := attachment.Bytes(context.Background())
 	require.NoError(t, err)
 	require.Equal(t, []byte("hello"), data)
 
-	text, err := attachment.Text()
+	text, err := attachment.Text(context.Background())
 	require.NoError(t, err)
 	require.Equal(t, "hello", text)
 
-	uri, err := attachment.Base64URI()
+	uri, err := attachment.Base64URI(context.Background())
 	require.NoError(t, err)
 	require.Equal(t, "data:text/plain;base64,aGVsbG8=", uri)
+}
+
+// Clone copies attachment metadata and data without sharing mutable byte storage.
+func TestAttachmentClone(t *testing.T) {
+	// Setup: use a populated attachment whose data can be mutated independently.
+	original := &attachments.Attachment{
+		Filename:    "report.txt",
+		ContentType: "text/plain",
+		URL:         "https://example.com/report.txt",
+		Data:        []byte("original"),
+	}
+
+	// Execute the clone operation, then mutate its byte buffer.
+	cloned := original.Clone()
+	cloned.Data[0] = 'X'
+
+	// Assert all scalar fields were copied and the source data is unchanged.
+	require.NotSame(t, original, cloned)
+	require.Equal(t, "report.txt", cloned.Filename)
+	require.Equal(t, "text/plain", cloned.ContentType)
+	require.Equal(t, original.URL, cloned.URL)
+	require.Equal(t, "original", string(original.Data))
+	require.Equal(t, "Xriginal", string(cloned.Data))
+
+	// The collection clone delegates to Attachment.Clone and preserves nil entries.
+	collection := attachments.Attachments{original, nil}
+	clonedCollection := collection.Clone()
+	clonedCollection[0].Data[1] = 'Y'
+	require.Equal(t, "original", string(original.Data))
+	require.Nil(t, clonedCollection[1])
+	require.NotSame(t, original, clonedCollection[0])
+	clonedCollection[0] = nil
+	require.Same(t, original, collection[0])
+
+	// Nil receivers stay nil, while non-nil empty values remain non-nil.
+	var absent *attachments.Attachment
+	require.Nil(t, absent.Clone())
+	empty := (&attachments.Attachment{Data: []byte{}}).Clone()
+	require.NotNil(t, empty.Data)
+	var noAttachments attachments.Attachments
+	require.Nil(t, noAttachments.Clone())
+	require.NotNil(t, attachments.Attachments{}.Clone())
 }
 
 func TestBase64URIRejectsInvalidContentType(t *testing.T) {
@@ -44,7 +86,7 @@ func TestBase64URIRejectsInvalidContentType(t *testing.T) {
 		Data:        []byte("hello"),
 	}
 
-	_, err := attachment.Base64URI()
+	_, err := attachment.Base64URI(context.Background())
 	require.Error(t, err)
 }
 
@@ -58,19 +100,19 @@ func TestAttachmentDownload(t *testing.T) {
 	t.Cleanup(server.Close)
 
 	attachment := &attachments.Attachment{Filename: "note.txt", URL: server.URL}
-	data, err := attachment.BytesContext(context.Background())
+	data, err := attachment.Bytes(context.Background())
 	require.NoError(t, err)
 	require.Equal(t, []byte("downloaded"), data)
 }
 
 // Verifies cancellation is propagated to URL-backed attachment downloads.
-func TestAttachmentDownloadContext(t *testing.T) {
+func TestAttachmentDownloadPreCanceled(t *testing.T) {
 	setAttachmentConfig(t, 1024, time.Second)
 	ctx, cancel := context.WithCancel(context.Background())
 	cancel()
 
 	attachment := &attachments.Attachment{Filename: "note.txt", URL: "https://example.com"}
-	_, err := attachment.BytesContext(ctx)
+	_, err := attachment.Bytes(ctx)
 	require.ErrorIs(t, err, context.Canceled)
 }
 
@@ -91,7 +133,7 @@ func TestBase64URIInfersContentType(t *testing.T) {
 	for _, tt := range tests {
 		t.Run(tt.name, func(t *testing.T) {
 			attachment := &attachments.Attachment{Filename: tt.filename, Data: tt.data}
-			uri, err := attachment.Base64URI()
+			uri, err := attachment.Base64URI(context.Background())
 			if tt.wantError {
 				require.Error(t, err)
 				return
@@ -111,7 +153,7 @@ func TestAttachmentDownloadUsesConfiguredSizeLimit(t *testing.T) {
 	t.Cleanup(server.Close)
 
 	attachment := &attachments.Attachment{Filename: "large.bin", URL: server.URL}
-	_, err := attachment.BytesContext(t.Context())
+	_, err := attachment.Bytes(t.Context())
 	require.ErrorContains(t, err, "exceeds maximum size of 5 bytes")
 }
 
@@ -143,7 +185,7 @@ func TestAttachmentDownloadLimitCanExceedDefault(t *testing.T) {
 	t.Cleanup(server.Close)
 
 	attachment := &attachments.Attachment{Filename: "large.bin", URL: server.URL}
-	data, err := attachment.BytesContext(t.Context())
+	data, err := attachment.Bytes(t.Context())
 	require.NoError(t, err)
 	require.Len(t, data, int(bodySize))
 }
@@ -162,7 +204,7 @@ func TestAttachmentDerivedTimeoutDoesNotCancelCaller(t *testing.T) {
 
 	caller := context.Background()
 	attachment := &attachments.Attachment{Filename: "slow.bin", URL: server.URL}
-	_, err := attachment.BytesContext(caller)
+	_, err := attachment.Bytes(caller)
 	require.ErrorIs(t, err, context.DeadlineExceeded)
 	<-started
 	<-finished
@@ -182,7 +224,7 @@ func TestAttachmentRespectsEarlierCallerDeadline(t *testing.T) {
 	caller, cancel := context.WithTimeout(t.Context(), 40*time.Millisecond)
 	defer cancel()
 	attachment := &attachments.Attachment{Filename: "slow.bin", URL: server.URL}
-	_, err := attachment.BytesContext(caller)
+	_, err := attachment.Bytes(caller)
 	<-started
 	require.ErrorIs(t, err, context.DeadlineExceeded)
 	require.ErrorIs(t, caller.Err(), context.DeadlineExceeded)
@@ -201,7 +243,7 @@ func TestAttachmentPropagatesCallerCancellation(t *testing.T) {
 	caller, cancel := context.WithCancel(t.Context())
 	result := make(chan error, 1)
 	go func() {
-		_, err := (&attachments.Attachment{Filename: "slow.bin", URL: server.URL}).BytesContext(caller)
+		_, err := (&attachments.Attachment{Filename: "slow.bin", URL: server.URL}).Bytes(caller)
 		result <- err
 	}()
 	<-started

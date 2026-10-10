@@ -13,6 +13,7 @@ import (
 	"github.com/openai/openai-go/v3/option"
 	"github.com/openai/openai-go/v3/shared"
 	"go.rtnl.ai/horizon/attachments"
+	"go.rtnl.ai/horizon/capabilities"
 	"go.rtnl.ai/horizon/config"
 	"go.rtnl.ai/horizon/errors"
 	"go.rtnl.ai/horizon/prompts"
@@ -20,10 +21,6 @@ import (
 	"go.rtnl.ai/horizon/schema"
 
 	"go.rtnl.ai/x/mime"
-)
-
-var (
-	ErrNoChatCompletions = errors.New("no chat completions choices returned")
 )
 
 // Client for the OpenAI Chat Completions API.
@@ -44,7 +41,7 @@ func NewChatCompletions(conf provider.Config, options provider.Options) (*ChatCo
 func (cc *ChatCompletionsClient) Generate(ctx context.Context, req *provider.Request) (out *provider.Response, err error) {
 	// Create the request body to send via the OpenAI chat completions API.
 	var body openai.ChatCompletionNewParams
-	if body, err = ChatCompletionsBodyContext(ctx, req); err != nil {
+	if body, err = ChatCompletionsBody(ctx, req); err != nil {
 		return nil, err
 	}
 
@@ -60,7 +57,7 @@ func (cc *ChatCompletionsClient) Generate(ctx context.Context, req *provider.Req
 	}
 
 	if len(completion.Choices) == 0 {
-		return nil, ErrNoChatCompletions
+		return nil, errors.ErrNoChatCompletions
 	}
 
 	// TODO: Better handling of the Usage data, just collecting simple info right now.
@@ -132,24 +129,18 @@ func (cc *ChatCompletionsClient) Generate(ctx context.Context, req *provider.Req
 
 		// TODO: map generated audio into response attachments
 
-		// Convert chat completion tool calls to Horizon tool calls.
-		// TODO: re-map this once tools/capabilities are refactored in a future ticket
-		/*
-			var toolCalls []capabilities.ToolCall
-			for _, call := range choice.Message.ToolCalls {
-				switch call.Type {
-				case "function":
-					toolCalls = append(toolCalls, capabilities.ToolCall{
-						CallID:    call.ID,
-						Name:      call.Function.Name,
-						Arguments: json.RawMessage(call.Function.Arguments),
-					})
-				default:
-					return nil, fmt.Errorf("unsupported chat completion tool call type: %s", call.Type)
-				}
+		for _, call := range choice.Message.ToolCalls {
+			switch call.Type {
+			case "function":
+				msg.ToolCalls = append(msg.ToolCalls, prompts.ToolCall{
+					CallID:    call.ID,
+					Name:      call.Function.Name,
+					Arguments: call.Function.Arguments,
+				})
+			default:
+				return nil, fmt.Errorf("%w: %s", errors.ErrUnsupportedChatToolCallType, call.Type)
 			}
-			out.ToolCalls = append(out.ToolCalls, toolCalls...)
-		*/
+		}
 
 		out.Output = append(out.Output, msg)
 	}
@@ -176,13 +167,9 @@ func (cc *ChatCompletionsClient) Generate(ctx context.Context, req *provider.Req
 // - N: always set to 1 because in an Endeavor context, we only ever want a single generation.
 //
 // NOTE: we have to keep this function up to date with any OpenAI API changes.
-func ChatCompletionsBody(req *provider.Request) (body openai.ChatCompletionNewParams, err error) {
-	return ChatCompletionsBodyContext(context.Background(), req)
-}
-
-// Creates a Chat Completions request body and uses ctx when resolving remote
+// Creates a Chat Completions request body, using ctx when resolving remote
 // attachments.
-func ChatCompletionsBodyContext(ctx context.Context, req *provider.Request) (body openai.ChatCompletionNewParams, err error) {
+func ChatCompletionsBody(ctx context.Context, req *provider.Request) (body openai.ChatCompletionNewParams, err error) {
 	// TODO: handle Audio once represented on request
 	// TODO: handle WebSearchOptions once represented on request
 	body = openai.ChatCompletionNewParams{
@@ -191,22 +178,20 @@ func ChatCompletionsBodyContext(ctx context.Context, req *provider.Request) (bod
 		N:     openai.Int(1), // In an Endeavor context, we only ever want a single generation.
 	}
 
-	if body.Messages, err = ChatCompletionsMessagesContext(ctx, req.Input, req.Attachments); err != nil {
+	if body.Messages, err = ChatCompletionsMessages(ctx, req.Input, req.Attachments); err != nil {
 		return body, err
 	}
 
-	// TODO: Add tool definitions and tool choice once Horizon tool calling is implemented.
-	/*
-		if body.Tools, err = ChatCompletionsTools(req.Tools); err != nil {
+	if len(req.Tools) > 0 {
+		if body.Tools, err = chatTools(req.Tools); err != nil {
 			return body, err
 		}
-		if len(req.Tools) > 0 {
-			body.ToolChoice = openai.ChatCompletionToolChoiceOptionUnionParam{
-				OfAuto: openai.String("auto"),
-			}
-			body.ParallelToolCalls = openai.Bool(true)
+		// TODO: give an option to "require" tool use; "auto" means the model chooses to use tools or not
+		body.ToolChoice = openai.ChatCompletionToolChoiceOptionUnionParam{
+			OfAuto: openai.String("auto"),
 		}
-	*/
+		body.ParallelToolCalls = openai.Bool(true)
+	}
 
 	if body.ResponseFormat, err = ChatCompletionsResponseFormat(req.OutputSchema); err != nil {
 		return body, err
@@ -294,30 +279,31 @@ func ChatCompletionsBodyContext(ctx context.Context, req *provider.Request) (bod
 //
 // NOTE: the `Name` field is not supported by Horizon.
 // TODO: handle the attachments in the arrays of the message params
-func ChatCompletionsMessages(in prompts.Prompts, attachments attachments.Attachments) (out []openai.ChatCompletionMessageParamUnion, err error) {
-	return ChatCompletionsMessagesContext(context.Background(), in, attachments)
-}
-
-// Converts Horizon prompts and attachments to Chat Completions messages, using
-// ctx for remote attachment downloads.
-func ChatCompletionsMessagesContext(ctx context.Context, in prompts.Prompts, attachments attachments.Attachments) (out []openai.ChatCompletionMessageParamUnion, err error) {
-	var parts []openai.ChatCompletionContentPartUnionParam
-	if parts, err = ChatCompletionsAttachmentsContext(ctx, attachments); err != nil {
+func ChatCompletionsMessages(ctx context.Context, in prompts.Prompts, attachments attachments.Attachments) (out []openai.ChatCompletionMessageParamUnion, err error) {
+	var attachParts []openai.ChatCompletionContentPartUnionParam
+	if attachParts, err = ChatCompletionsAttachments(ctx, attachments); err != nil {
 		return nil, err
 	}
 
+	in, attachmentIndex := attachmentMessages(in, len(attachments) > 0)
 	out = make([]openai.ChatCompletionMessageParamUnion, 0, len(in))
-	for _, msg := range in {
+	for i, msg := range in {
+		if msg == nil {
+			continue
+		}
 		param := openai.ChatCompletionMessageParamUnion{}
 		switch msg.Role {
 		case prompts.RoleUser:
-			userParts := append([]openai.ChatCompletionContentPartUnionParam{
+			userParts := []openai.ChatCompletionContentPartUnionParam{
 				{
 					OfText: &openai.ChatCompletionContentPartTextParam{
 						Text: msg.Content,
 					},
 				},
-			}, parts...)
+			}
+			if i == attachmentIndex {
+				userParts = append(userParts, attachParts...)
+			}
 			param.OfUser = &openai.ChatCompletionUserMessageParam{
 				Content: openai.ChatCompletionUserMessageParamContentUnion{
 					OfArrayOfContentParts: userParts,
@@ -328,6 +314,7 @@ func ChatCompletionsMessagesContext(ctx context.Context, in prompts.Prompts, att
 				Content: openai.ChatCompletionAssistantMessageParamContentUnion{
 					OfString: openai.String(msg.Content),
 				},
+				ToolCalls: chatToolCalls(msg.ToolCalls),
 			}
 		case prompts.RoleSystem:
 			param.OfSystem = &openai.ChatCompletionSystemMessageParam{
@@ -336,24 +323,20 @@ func ChatCompletionsMessagesContext(ctx context.Context, in prompts.Prompts, att
 				},
 			}
 		case prompts.RoleTool:
-			// TODO: Map tool results to tool messages once prompts expose the
-			// provider-neutral tool model.
-			return nil, errors.New("tool messages are not supported yet")
-
-			/*
-				if len(msg.ToolResults) == 0 {
-					return nil, errors.New("tool message must contain tool results")
-				}
-				for _, result := range msg.ToolResults {
-					out = append(out, openai.ChatCompletionMessageParamUnion{
-						OfTool: &openai.ChatCompletionToolMessageParam{
-							Content:    openai.ChatCompletionToolMessageParamContentUnion{OfString: openai.String(toolResultText(result))},
-							ToolCallID: result.CallID,
-						},
-					})
-				}
-				continue
-			*/
+			if len(msg.ToolResults) == 0 {
+				return nil, errors.ErrToolMessageMissingResults
+			}
+			for _, result := range msg.ToolResults {
+				out = append(out, openai.ChatCompletionMessageParamUnion{
+					OfTool: &openai.ChatCompletionToolMessageParam{
+						Content:    openai.ChatCompletionToolMessageParamContentUnion{OfString: openai.String(result.Content)},
+						ToolCallID: result.CallID,
+					},
+				})
+			}
+			// There can be multiple tool results, so we need to append them all
+			// and then skip the final append with this 'continue'.
+			continue
 		case prompts.RoleDeveloper:
 			param.OfDeveloper = &openai.ChatCompletionDeveloperMessageParam{
 				Content: openai.ChatCompletionDeveloperMessageParamContentUnion{
@@ -361,7 +344,7 @@ func ChatCompletionsMessagesContext(ctx context.Context, in prompts.Prompts, att
 				},
 			}
 		default:
-			return nil, fmt.Errorf("unsupported message role: %s", msg.Role)
+			return nil, fmt.Errorf("%w: %s", errors.ErrUnsupportedMessageRole, msg.Role)
 		}
 
 		out = append(out, param)
@@ -369,31 +352,31 @@ func ChatCompletionsMessagesContext(ctx context.Context, in prompts.Prompts, att
 	return out, nil
 }
 
-// TODO: re-enable/refactor in a future tool/capabilities ticket
-/*
-// ChatCompletionsTools maps provider-neutral tool definitions to function tools
-// accepted by the Chat Completions API.
-func ChatCompletionsTools(definitions []capabilities.ToolDefinition) ([]openai.ChatCompletionToolUnionParam, error) {
+// chatTools maps provider-neutral tool definitions to Chat Completions API tools.
+func chatTools(definitions []capabilities.Definition) ([]openai.ChatCompletionToolUnionParam, error) {
 	if len(definitions) == 0 {
 		return nil, nil
 	}
+
 	tools := make([]openai.ChatCompletionToolUnionParam, 0, len(definitions))
 	for _, definition := range definitions {
-		parameters, err := toolParameters(definition.InputSchema)
+		parameters, err := definition.InputSchema.Object()
 		if err != nil {
 			return nil, fmt.Errorf("tool %q input schema: %w", definition.Name, err)
 		}
-		tools = append(tools, openai.ChatCompletionFunctionTool(shared.FunctionDefinitionParam{
-			Name:        definition.Name,
+		function := shared.FunctionDefinitionParam{
+			Name:        string(definition.Name),
 			Description: openai.String(definition.Description),
 			Parameters:  shared.FunctionParameters(parameters),
-		}))
+			Strict:      openai.Bool(definition.InputSchema != nil && definition.InputSchema.Strict),
+		}
+		tools = append(tools, openai.ChatCompletionFunctionTool(function))
 	}
 	return tools, nil
 }
 
-// chatToolCalls maps Horizon tool calls to Chat Completions function calls.
-func chatToolCalls(calls []capabilities.ToolCall) []openai.ChatCompletionMessageToolCallUnionParam {
+// chatToolCalls maps provider-neutral tool calls to Chat Completions API function calls.
+func chatToolCalls(calls []prompts.ToolCall) []openai.ChatCompletionMessageToolCallUnionParam {
 	out := make([]openai.ChatCompletionMessageToolCallUnionParam, 0, len(calls))
 	for _, call := range calls {
 		out = append(out, openai.ChatCompletionMessageToolCallUnionParam{
@@ -401,14 +384,13 @@ func chatToolCalls(calls []capabilities.ToolCall) []openai.ChatCompletionMessage
 				ID: call.CallID,
 				Function: openai.ChatCompletionMessageFunctionToolCallFunctionParam{
 					Name:      call.Name,
-					Arguments: string(call.Arguments),
+					Arguments: call.Arguments,
 				},
 			},
 		})
 	}
 	return out
 }
-*/
 
 // Creates an OpenAI chat completion response format from a Horizon schema. The
 // response format can be a nil schema, text/plain, application/json, or
@@ -451,12 +433,12 @@ func ChatCompletionsResponseFormat(schema *schema.Schema) (format openai.ChatCom
 		}
 
 		// Resolve the JSON schema, fetching from a remote URI when supported.
-		if format.OfJSONSchema.JSONSchema.Schema, err = jsonSchemaObject(schema); err != nil {
+		if format.OfJSONSchema.JSONSchema.Schema, err = schema.Object(); err != nil {
 			return format, err
 		}
 		return format, nil
 	default:
-		return format, fmt.Errorf("unsupported output schema mime type: %s", schema.MimeType)
+		return format, fmt.Errorf("%w: %s", errors.ErrUnsupportedOutputSchemaMimeType, schema.MimeType)
 	}
 }
 
@@ -474,18 +456,13 @@ func FinishReasonType(reason string) prompts.Type {
 	}
 }
 
-// Convert Horizon attachments to OpenAI content parts
-func ChatCompletionsAttachments(attachments attachments.Attachments) (parts []openai.ChatCompletionContentPartUnionParam, err error) {
-	return ChatCompletionsAttachmentsContext(context.Background(), attachments)
-}
-
-// Converts attachments to Chat Completions content parts, using ctx for remote
-// attachment downloads.
-func ChatCompletionsAttachmentsContext(ctx context.Context, attachments attachments.Attachments) (parts []openai.ChatCompletionContentPartUnionParam, err error) {
+// Converts Horizon attachments to Chat Completions content parts, using ctx for
+// remote attachment downloads.
+func ChatCompletionsAttachments(ctx context.Context, attachments attachments.Attachments) (parts []openai.ChatCompletionContentPartUnionParam, err error) {
 	var uri string
 	for _, attachment := range attachments {
 		if attachment == nil {
-			return nil, fmt.Errorf("attachment is nil")
+			return nil, errors.ErrNilAttachment
 		}
 		contentType := strings.ToLower(strings.TrimSpace(strings.SplitN(attachment.ContentType, ";", 2)[0]))
 		topLevelType, _, _ := strings.Cut(contentType, "/")
@@ -493,7 +470,7 @@ func ChatCompletionsAttachmentsContext(ctx context.Context, attachments attachme
 		switch topLevelType {
 		case "text":
 			var text string
-			if text, err = attachment.TextContext(ctx); err != nil {
+			if text, err = attachment.Text(ctx); err != nil {
 				return nil, err
 			}
 			parts = append(parts, openai.ChatCompletionContentPartUnionParam{
@@ -502,7 +479,7 @@ func ChatCompletionsAttachmentsContext(ctx context.Context, attachments attachme
 				},
 			})
 		case "image":
-			if uri, err = attachment.Base64URIContext(ctx); err != nil {
+			if uri, err = attachment.Base64URI(ctx); err != nil {
 				return nil, err
 			}
 			parts = append(parts, openai.ChatCompletionContentPartUnionParam{
@@ -522,11 +499,11 @@ func ChatCompletionsAttachmentsContext(ctx context.Context, attachments attachme
 			case "audio/wav", "audio/x-wav", "audio/wave", "audio/vnd.wave":
 				format = "wav"
 			default:
-				return nil, fmt.Errorf("unsupported Chat Completions audio content type: %s", attachment.ContentType)
+				return nil, fmt.Errorf("%w: %s", errors.ErrUnsupportedChatCompletionsAudioType, attachment.ContentType)
 			}
 
 			var data []byte
-			if data, err = attachment.BytesContext(ctx); err != nil {
+			if data, err = attachment.Bytes(ctx); err != nil {
 				return nil, err
 			}
 			parts = append(parts, openai.ChatCompletionContentPartUnionParam{
@@ -538,7 +515,7 @@ func ChatCompletionsAttachmentsContext(ctx context.Context, attachments attachme
 				},
 			})
 		default:
-			if uri, err = attachment.Base64URIContext(ctx); err != nil {
+			if uri, err = attachment.Base64URI(ctx); err != nil {
 				return nil, err
 			}
 			parts = append(parts, openai.ChatCompletionContentPartUnionParam{

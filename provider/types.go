@@ -5,6 +5,7 @@ import (
 	"time"
 
 	"go.rtnl.ai/horizon/attachments"
+	"go.rtnl.ai/horizon/capabilities"
 	"go.rtnl.ai/horizon/params"
 	"go.rtnl.ai/horizon/prompts"
 	"go.rtnl.ai/horizon/schema"
@@ -12,14 +13,33 @@ import (
 
 // Combines task configuration and rendered input for one inference.
 type Request struct {
-	Model        string                  // The model name sent directly to the provider.
-	Params       *params.Params          // Provider-neutral generation parameters.
-	Input        prompts.Prompts         // Rendered prompts sent to the model.
-	Attachments  attachments.Attachments // Files, images, links, and other attached input.
-	OutputSchema *schema.Schema          // Requested output schema, particularly for JSON.
-	// TODO: Replace tool names with provider-neutral tool definitions once the
-	// Horizon tool model is implemented.
-	Tools []string // Tools advertised to the model.
+	Model        string                    // The model name sent directly to the provider.
+	Params       *params.Params            // Provider-neutral generation parameters.
+	Input        prompts.Prompts           // Rendered prompts sent to the model.
+	Attachments  attachments.Attachments   // Files, images, links, and other attached input.
+	OutputSchema *schema.Schema            // Requested output schema, particularly for JSON.
+	Tools        []capabilities.Definition // Tools advertised to the model.
+}
+
+// Clone returns a request snapshot with independent containers and typed values.
+// Opaque values inside parameters and prompt metadata follow their own clone rules.
+func (r *Request) Clone() *Request {
+	if r == nil {
+		return nil
+	}
+
+	cloned := *r
+	cloned.Params = r.Params.Clone()
+	cloned.Input = r.Input.Clone()
+	cloned.Attachments = r.Attachments.Clone()
+	cloned.OutputSchema = r.OutputSchema.Clone()
+	if r.Tools != nil {
+		cloned.Tools = make([]capabilities.Definition, len(r.Tools))
+		for i, tool := range r.Tools {
+			cloned.Tools[i] = tool.Clone()
+		}
+	}
+	return &cloned
 }
 
 // Represents the provider-neutral result of an inference request.

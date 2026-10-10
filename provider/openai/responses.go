@@ -3,6 +3,7 @@ package openai
 import (
 	"context"
 	"encoding/json"
+	"log/slog"
 
 	"fmt"
 	"strconv"
@@ -11,9 +12,11 @@ import (
 
 	"github.com/openai/openai-go/v3"
 	"github.com/openai/openai-go/v3/option"
+	"github.com/openai/openai-go/v3/packages/param"
 	"github.com/openai/openai-go/v3/responses"
 	"github.com/openai/openai-go/v3/shared"
 	"go.rtnl.ai/horizon/attachments"
+	"go.rtnl.ai/horizon/capabilities"
 	"go.rtnl.ai/horizon/config"
 	"go.rtnl.ai/horizon/errors"
 	"go.rtnl.ai/horizon/prompts"
@@ -21,11 +24,13 @@ import (
 	"go.rtnl.ai/horizon/schema"
 
 	"go.rtnl.ai/x/mime"
+	"go.rtnl.ai/x/rlog"
 )
 
-var (
-	ErrNoResponseOutput = errors.New("no response output items returned")
-)
+// Responses reasoning items must be replayed with their encrypted content when
+// the adapter manages continuation through the prompt transcript, so we will
+// save their exact content in the prompt metadata so we can replay them later.
+const responsesReasoningItemMetaKey = "responses_reasoning_item"
 
 // Client for the OpenAI Responses API.
 type ResponsesClient struct {
@@ -45,7 +50,7 @@ func NewResponses(conf provider.Config, options provider.Options) (*ResponsesCli
 func (rc *ResponsesClient) Generate(ctx context.Context, req *provider.Request) (out *provider.Response, err error) {
 	// Create the request body to send via the OpenAI responses API.
 	var body responses.ResponseNewParams
-	if body, err = ResponsesBodyContext(ctx, req); err != nil {
+	if body, err = ResponsesBody(ctx, req); err != nil {
 		return nil, err
 	}
 
@@ -61,11 +66,11 @@ func (rc *ResponsesClient) Generate(ctx context.Context, req *provider.Request) 
 	}
 
 	if resp.Error.Message != "" {
-		return nil, fmt.Errorf("openai responses error: %s: %s", resp.Error.Code, resp.Error.Message)
+		return nil, fmt.Errorf("%w: %s: %s", errors.ErrOpenAIResponsesError, resp.Error.Code, resp.Error.Message)
 	}
 
 	if len(resp.Output) == 0 {
-		return nil, ErrNoResponseOutput
+		return nil, errors.ErrNoResponseOutput
 	}
 
 	// TODO: Better handling of the Usage data, just collecting simple info right now.
@@ -153,22 +158,45 @@ func (rc *ResponsesClient) Generate(ctx context.Context, req *provider.Request) 
 			}
 
 			out.Output = append(out.Output, msg)
-			/* TODO: Handle tool calls
-			case responses.ResponseFunctionToolCall:
-				// Convert chat completion tool calls to Horizon tool calls.
-				out.ToolCalls = append(out.ToolCalls, capabilities.ToolCall{
+		case responses.ResponseFunctionToolCall:
+			out.Output = append(out.Output, &prompts.Prompt{
+				ID:     variant.ID,
+				Role:   prompts.RoleAssistant,
+				Status: string(variant.Status),
+				Type:   prompts.TypeToolCall,
+				ToolCalls: []prompts.ToolCall{{
 					CallID:    variant.CallID,
 					Name:      variant.Name,
-					Arguments: json.RawMessage(variant.Arguments),
-				}) */
+					Arguments: variant.Arguments,
+				}},
+			})
+		case responses.ResponseReasoningItem:
+			meta := make(provider.Meta)
+			meta[responsesReasoningItemMetaKey] = variant.RawJSON()
+			var summary strings.Builder
+			for _, item := range variant.Summary {
+				if summary.Len() > 0 {
+					summary.WriteByte('\n')
+				}
+				summary.WriteString(item.Text)
+			}
+			out.Output = append(out.Output, &prompts.Prompt{
+				ID:      variant.ID,
+				Role:    prompts.RoleAssistant,
+				Type:    prompts.TypeReasoning,
+				Content: summary.String(),
+				Status:  string(variant.Status),
+				Meta:    meta,
+			})
 		default:
-			// TODO: Handle other output item types (reasoning, etc.)
+			// Other Responses output item types are not currently represented by prompts.
+			rlog.DebugAttrs(ctx, "unhandled response item type", slog.Any("variant", variant))
 		}
 	}
 
 	// Fall back to aggregated text if the response had output items but none were
 	// mapped as messages (for example, providers that only populate output_text).
-	if len(out.Output) == 0 { // TODO: also ensure there are no tool calls
+	if len(out.Output) == 0 {
 		if text := resp.OutputText(); text != "" {
 			out.Output = append(out.Output, &prompts.Prompt{
 				Role:    prompts.RoleAssistant,
@@ -177,7 +205,7 @@ func (rc *ResponsesClient) Generate(ctx context.Context, req *provider.Request) 
 				Meta:    make(provider.Meta),
 			})
 		} else {
-			return nil, ErrNoResponseOutput
+			return nil, errors.ErrNoResponseOutput
 		}
 	}
 
@@ -205,30 +233,26 @@ func (rc *ResponsesClient) Generate(ctx context.Context, req *provider.Request) 
 // - Verbosity: Is controlled by the ResponseTextConfigParam.
 //
 // NOTE: we have to keep this function up to date with any OpenAI API changes.
-func ResponsesBody(req *provider.Request) (body responses.ResponseNewParams, err error) {
-	return ResponsesBodyContext(context.Background(), req)
-}
-
-// Creates a Responses API request body and uses ctx when resolving remote
+// Creates a Responses API request body, using ctx when resolving remote
 // attachments.
-func ResponsesBodyContext(ctx context.Context, req *provider.Request) (body responses.ResponseNewParams, err error) {
+func ResponsesBody(ctx context.Context, req *provider.Request) (body responses.ResponseNewParams, err error) {
 	body = responses.ResponseNewParams{
 		Background: openai.Bool(false),
 		Store:      openai.Bool(false),
 		Model:      req.Model,
 	}
-	/* TODO: Add tool definitions and tool choice once Horizon tool calling is implemented.
-	if body.Tools, err = ResponsesTools(req.Tools); err != nil {
-		return body, err
-	}
+
 	if len(req.Tools) > 0 {
+		if body.Tools, err = ResponsesTools(req.Tools); err != nil {
+			return body, err
+		}
 		body.ToolChoice = responses.ResponseNewParamsToolChoiceUnion{
 			OfToolChoiceMode: param.NewOpt(responses.ToolChoiceOptionsAuto),
 		}
 		body.ParallelToolCalls = openai.Bool(true)
-	}*/
+	}
 
-	if body.Input, err = ResponsesMessagesContext(ctx, req.Input, req.Attachments); err != nil {
+	if body.Input, err = ResponsesMessages(ctx, req.Input, req.Attachments); err != nil {
 		return body, err
 	}
 
@@ -308,83 +332,53 @@ func ResponsesBodyContext(ctx context.Context, req *provider.Request) (body resp
 // messages.
 //
 // NOTE: the `Name` field is not supported by Horizon.
-func ResponsesMessages(in prompts.Prompts, attachments attachments.Attachments) (out responses.ResponseNewParamsInputUnion, err error) {
-	return ResponsesMessagesContext(context.Background(), in, attachments)
-}
-
-// Converts Horizon prompts and attachments to Responses input items, using ctx
-// for remote attachment downloads.
-func ResponsesMessagesContext(ctx context.Context, in prompts.Prompts, attachments attachments.Attachments) (out responses.ResponseNewParamsInputUnion, err error) {
-	var parts responses.ResponseInputMessageContentListParam
-	if parts, err = ResponsesAttachmentsContext(ctx, attachments); err != nil {
+func ResponsesMessages(ctx context.Context, in prompts.Prompts, attachments attachments.Attachments) (out responses.ResponseNewParamsInputUnion, err error) {
+	var attachParts responses.ResponseInputMessageContentListParam
+	if attachParts, err = ResponsesAttachments(ctx, attachments); err != nil {
 		return out, err
 	}
 
+	in, attachmentIndex := attachmentMessages(in, len(attachments) > 0)
 	items := make(responses.ResponseInputParam, 0, len(in))
-	for _, msg := range in {
-		/* TODO: handle tool calling; this is the old endeavor code saved for now but it might be better to move it below so i put 2 more TODOs there
-		 if msg.Role == horizon.RoleTool {
-			for _, result := range msg.ToolResults {
-				item := responses.ResponseInputItemParamOfFunctionCallOutput(toolResultText(result))
-				item.OfFunctionCallOutput.CallID = openai.String(result.CallID)
-
-				items = append(items, item)
-			}
-
-			if len(msg.ToolResults) > 0 {
-				continue
-			}
+	for i, msg := range in {
+		if msg == nil {
+			continue
 		}
-
-		if msg.Role == horizon.RoleAssistant && len(msg.ToolCalls) > 0 {
-			if msg.Content != "" {
-				items = append(items, responses.ResponseInputItemParamOfMessage(
-					msg.Content,
-					responses.EasyInputMessageRoleAssistant,
-				))
+		var item responses.ResponseInputItemUnionParam
+		switch msg.Role {
+		case prompts.RoleTool:
+			if len(msg.ToolResults) == 0 {
+				return out, errors.ErrToolMessageMissingResults
 			}
-			for _, call := range msg.ToolCalls {
-				items = append(items, responses.ResponseInputItemParamOfFunctionCall(
-					string(call.Arguments),
-					call.CallID,
-					call.Name,
-				))
+			for _, result := range msg.ToolResults {
+				resultItem := responses.ResponseInputItemParamOfFunctionCallOutput(result.Content)
+				resultItem.OfFunctionCallOutput.CallID = openai.String(result.CallID)
+				items = append(items, resultItem)
 			}
 			continue
-		} */
-
-		var role responses.EasyInputMessageRole
-		switch msg.Role {
-		case prompts.RoleUser:
-			role = responses.EasyInputMessageRoleUser
 		case prompts.RoleAssistant:
-			// TODO: Map assistant tool calls to function-call items once prompts
-			// expose the provider-neutral tool model.
-			role = responses.EasyInputMessageRoleAssistant
+			assistantItems, err := responsesAssistantItems(msg)
+			if err != nil {
+				return out, err
+			}
+			items = append(items, assistantItems...)
+			continue
+		case prompts.RoleUser:
+			userParts := responses.ResponseInputMessageContentListParam{
+				responses.ResponseInputContentParamOfInputText(msg.Content),
+			}
+			if i == attachmentIndex {
+				userParts = append(userParts, attachParts...)
+			}
+			item = responses.ResponseInputItemParamOfMessage(userParts, responses.EasyInputMessageRoleUser)
 		case prompts.RoleSystem:
-			role = responses.EasyInputMessageRoleSystem
+			item = responses.ResponseInputItemParamOfMessage(msg.Content, responses.EasyInputMessageRoleSystem)
 		case prompts.RoleDeveloper:
-			role = responses.EasyInputMessageRoleDeveloper
-		case prompts.RoleTool:
-			// TODO: Map tool results to function-call output items once prompts
-			// expose the provider-neutral tool model.
-			return out, fmt.Errorf("tool messages are not supported yet")
+			item = responses.ResponseInputItemParamOfMessage(msg.Content, responses.EasyInputMessageRoleDeveloper)
 		default:
-			return out, fmt.Errorf("unsupported message role: %s", msg.Role)
+			return out, fmt.Errorf("%w: %s", errors.ErrUnsupportedMessageRole, msg.Role)
 		}
 
-		var item responses.ResponseInputItemUnionParam
-		if role == responses.EasyInputMessageRoleUser {
-			userParts := append(responses.ResponseInputMessageContentListParam{
-				responses.ResponseInputContentParamOfInputText(msg.Content),
-			}, parts...)
-			item = responses.ResponseInputItemParamOfMessage(
-				userParts,
-				role,
-			)
-		} else {
-			item = responses.ResponseInputItemParamOfMessage(msg.Content, role)
-		}
 		if msg.Phase != "" {
 			item.OfMessage.Phase = responses.EasyInputMessagePhase(msg.Phase)
 		}
@@ -395,32 +389,96 @@ func ResponsesMessagesContext(ctx context.Context, in prompts.Prompts, attachmen
 	return out, nil
 }
 
-/*
+// Replays one assistant prompt as ordered Responses items. Reasoning is opaque
+// continuation data; function call IDs are distinct from provider item IDs.
+func responsesAssistantItems(msg *prompts.Prompt) (responses.ResponseInputParam, error) {
+	// Responses reasoning items must be replayed with their encrypted content when
+	// the adapter manages continuation through the prompt transcript, so replay
+	// the exact content that we saved previously, if present.
+	if raw, ok := msg.Meta[responsesReasoningItemMetaKey].(string); ok {
+		var reasoning responses.ResponseReasoningItemParam
+		if err := json.Unmarshal([]byte(raw), &reasoning); err != nil {
+			return nil, fmt.Errorf("decode Responses reasoning item: %w", err)
+		}
+		return responses.ResponseInputParam{{OfReasoning: &reasoning}}, nil
+	}
+
+	items := make(responses.ResponseInputParam, 0, len(msg.ToolCalls)+1)
+
+	// A call-only prompt does not create an additional empty assistant message.
+	if msg.Content != "" || len(msg.ToolCalls) == 0 {
+		items = append(items, responsesAssistantMessage(msg))
+	}
+
+	for _, call := range msg.ToolCalls {
+		item := responses.ResponseInputItemParamOfFunctionCall(call.Arguments, call.CallID, call.Name)
+		if msg.ID != "" {
+			item.OfFunctionCall.ID = param.NewOpt(msg.ID)
+		}
+		if msg.Status != "" {
+			item.OfFunctionCall.Status = responses.ResponseFunctionToolCallStatus(msg.Status)
+		}
+		items = append(items, item)
+	}
+	return items, nil
+}
+
+// Provider output messages retain their item identity, status, phase, and
+// refusal content. Caller-authored assistant messages use the simple input form.
+func responsesAssistantMessage(msg *prompts.Prompt) responses.ResponseInputItemUnionParam {
+	if msg.ID == "" {
+		item := responses.ResponseInputItemParamOfMessage(msg.Content, responses.EasyInputMessageRoleAssistant)
+		if msg.Phase != "" {
+			item.OfMessage.Phase = responses.EasyInputMessagePhase(msg.Phase)
+		}
+		return item
+	}
+
+	content := make([]responses.ResponseOutputMessageContentUnionParam, 0, 2)
+	refusal, hasRefusal := msg.Meta["refusal"].(string)
+	if msg.Content != "" && (msg.Type != prompts.TypeRefusal || hasRefusal) {
+		content = append(content, responses.ResponseOutputMessageContentUnionParam{
+			OfOutputText: &responses.ResponseOutputTextParam{
+				Text:        msg.Content,
+				Annotations: []responses.ResponseOutputTextAnnotationUnionParam{},
+			},
+		})
+	}
+	if msg.Type == prompts.TypeRefusal {
+		if !hasRefusal {
+			refusal = msg.Content
+		}
+		content = append(content, responses.ResponseOutputMessageContentUnionParam{
+			OfRefusal: &responses.ResponseOutputRefusalParam{Refusal: refusal},
+		})
+	}
+	item := responses.ResponseInputItemParamOfOutputMessage(content, msg.ID, responses.ResponseOutputMessageStatus(msg.Status))
+	if msg.Phase != "" {
+		item.OfOutputMessage.Phase = responses.ResponseOutputMessagePhase(msg.Phase)
+	}
+	return item
+}
+
 // ResponsesTools maps provider-neutral tool definitions to Responses function
 // tools.
-func ResponsesTools(definitions []capabilities.ToolDefinition) ([]responses.ToolUnionParam, error) {
+func ResponsesTools(definitions []capabilities.Definition) ([]responses.ToolUnionParam, error) {
 	if len(definitions) == 0 {
 		return nil, nil
 	}
 
 	tools := make([]responses.ToolUnionParam, 0, len(definitions))
 	for _, definition := range definitions {
-		parameters, err := toolParameters(definition.InputSchema)
+		parameters, err := definition.InputSchema.Object()
 		if err != nil {
 			return nil, fmt.Errorf("tool %q input schema: %w", definition.Name, err)
 		}
-		tool := responses.ToolParamOfFunction(definition.Name, parameters, false)
+		strict := definition.InputSchema != nil && definition.InputSchema.Strict
+		tool := responses.ToolParamOfFunction(string(definition.Name), parameters, strict)
 		tool.OfFunction.Description = openai.String(definition.Description)
-		if outputSchema, err := toolSchema(definition.OutputSchema); err != nil {
-			return nil, fmt.Errorf("tool %q output schema: %w", definition.Name, err)
-		} else {
-			tool.OfFunction.OutputSchema = outputSchema
-		}
 		tools = append(tools, tool)
 	}
 	return tools, nil
 }
-*/
 
 // Creates an OpenAI Responses response format from a Horizon schema. The
 // response format can be a nil schema, text/plain, application/json, or
@@ -442,7 +500,7 @@ func ResponsesResponseFormat(schema *schema.Schema) (format responses.ResponseFo
 		}, nil
 	case mime.ApplicationSchemaJSON:
 		var schemaMap map[string]any
-		if schemaMap, err = jsonSchemaObject(schema); err != nil {
+		if schemaMap, err = schema.Object(); err != nil {
 			return format, err
 		}
 
@@ -468,7 +526,7 @@ func ResponsesResponseFormat(schema *schema.Schema) (format responses.ResponseFo
 			},
 		}, nil
 	default:
-		return format, fmt.Errorf("unsupported output schema mime type: %s", schema.MimeType)
+		return format, fmt.Errorf("%w: %s", errors.ErrUnsupportedOutputSchemaMimeType, schema.MimeType)
 	}
 }
 
@@ -487,18 +545,13 @@ func ResponseStatusType(status responses.ResponseStatus, incompleteReason string
 	}
 }
 
-// Convert Horizon attachments to OpenAI Responses content parts.
-func ResponsesAttachments(attachments attachments.Attachments) (parts responses.ResponseInputMessageContentListParam, err error) {
-	return ResponsesAttachmentsContext(context.Background(), attachments)
-}
-
-// Converts attachments to Responses content parts, using ctx for remote
+// Converts Horizon attachments to Responses content parts, using ctx for remote
 // attachment downloads.
-func ResponsesAttachmentsContext(ctx context.Context, attachments attachments.Attachments) (parts responses.ResponseInputMessageContentListParam, err error) {
+func ResponsesAttachments(ctx context.Context, attachments attachments.Attachments) (parts responses.ResponseInputMessageContentListParam, err error) {
 	var uri string
 	for _, attachment := range attachments {
 		if attachment == nil {
-			return nil, fmt.Errorf("attachment is nil")
+			return nil, errors.ErrNilAttachment
 		}
 		contentType := strings.ToLower(strings.TrimSpace(strings.SplitN(attachment.ContentType, ";", 2)[0]))
 		topLevelType, _, _ := strings.Cut(contentType, "/")
@@ -506,12 +559,12 @@ func ResponsesAttachmentsContext(ctx context.Context, attachments attachments.At
 		switch topLevelType {
 		case "text":
 			var text string
-			if text, err = attachment.TextContext(ctx); err != nil {
+			if text, err = attachment.Text(ctx); err != nil {
 				return nil, err
 			}
 			parts = append(parts, responses.ResponseInputContentParamOfInputText(text))
 		case "image":
-			if uri, err = attachment.Base64URIContext(ctx); err != nil {
+			if uri, err = attachment.Base64URI(ctx); err != nil {
 				return nil, err
 			}
 			parts = append(parts, responses.ResponseInputContentUnionParam{
@@ -525,7 +578,7 @@ func ResponsesAttachmentsContext(ctx context.Context, attachments attachments.At
 			// how audio files are handled across different model providers.
 			// Responses message content is still input_text, input_image, and
 			// input_file only (no input_audio). Audio is sent as an input_file.
-			if uri, err = attachment.Base64URIContext(ctx); err != nil {
+			if uri, err = attachment.Base64URI(ctx); err != nil {
 				return nil, err
 			}
 			parts = append(parts, responses.ResponseInputContentUnionParam{
@@ -535,7 +588,7 @@ func ResponsesAttachmentsContext(ctx context.Context, attachments attachments.At
 				},
 			})
 		default:
-			if uri, err = attachment.Base64URIContext(ctx); err != nil {
+			if uri, err = attachment.Base64URI(ctx); err != nil {
 				return nil, err
 			}
 			parts = append(parts, responses.ResponseInputContentUnionParam{
@@ -547,33 +600,4 @@ func ResponsesAttachmentsContext(ctx context.Context, attachments attachments.At
 		}
 	}
 	return parts, nil
-}
-
-// Converts a Horizon schema into a JSON Schema object map for the Responses API.
-func jsonSchemaObject(schema *schema.Schema) (_ map[string]any, err error) {
-	var raw any
-	if raw, err = schema.JSON(); err != nil {
-		return nil, err
-	}
-
-	switch v := raw.(type) {
-	case map[string]any:
-		return v, nil
-	case json.RawMessage:
-		var out map[string]any
-		if err = json.Unmarshal(v, &out); err != nil {
-			return nil, err
-		}
-		return out, nil
-	default:
-		var data []byte
-		if data, err = json.Marshal(v); err != nil {
-			return nil, err
-		}
-		var out map[string]any
-		if err = json.Unmarshal(data, &out); err != nil {
-			return nil, err
-		}
-		return out, nil
-	}
 }

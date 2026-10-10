@@ -27,6 +27,48 @@ func TestClone(t *testing.T) {
 	})
 }
 
+// Provider parameters are copied without Horizon-only controls or source mutation.
+func TestProviderOnly(t *testing.T) {
+	t.Run("independent provider parameters", func(t *testing.T) {
+		// Setup: combine a normalized execution option with provider and extension keys.
+		original := params.New(map[string]any{
+			"maxToolTurns":       2,
+			params.Temperature:   0.5,
+			params.MaxToolCalls:  4,
+			"provider_extension": "keep",
+		})
+
+		// Execute the filter and modify its result to check map ownership.
+		provider := original.ProviderOnly()
+		provider.Set(params.Temperature, 1.0)
+
+		// Assert only the execution option was removed and source values stayed intact.
+		_, exists := provider.Get(params.MaxToolTurns)
+		require.False(t, exists)
+		turns, exists := original.MaxToolTurns()
+		require.True(t, exists)
+		require.Equal(t, int64(2), turns)
+		temperature, exists := original.Temperature()
+		require.True(t, exists)
+		require.Equal(t, 0.5, temperature)
+		value, exists := provider.Get("provider_extension")
+		require.True(t, exists)
+		require.Equal(t, "keep", value)
+		_, exists = provider.Get(params.MaxToolCalls)
+		require.True(t, exists)
+		require.Equal(t, 3, provider.Len())
+	})
+
+	t.Run("nil and empty", func(t *testing.T) {
+		var absent *params.Params
+		require.Nil(t, absent.ProviderOnly())
+		empty := params.New(nil)
+		provider := empty.ProviderOnly()
+		require.NotSame(t, empty, provider)
+		require.Zero(t, provider.Len())
+	})
+}
+
 func TestNew(t *testing.T) {
 	t.Run("Nil", func(t *testing.T) {
 		p := params.New(nil)

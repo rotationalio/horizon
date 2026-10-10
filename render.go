@@ -46,6 +46,7 @@ func Render(templates prompts.Templates, ctx prompts.Context) (input prompts.Pro
 		input = append(input, &prompts.Prompt{
 			Index:   prompt.Index,
 			Role:    prompt.Role,
+			Type:    prompts.TypeMessage,
 			Content: rendered,
 		})
 	}

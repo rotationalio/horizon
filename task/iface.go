@@ -66,8 +66,9 @@ type Renderer interface {
 
 // InputGuards are used to validate the input before it is sent to the LLM, particularly
 // to detect security or privacy issues that should be prevented from being sent to the
-// the LLM. The InputGuard interface is used to validate every request, even tool calls
-// before being sent to the LLM.
+// LLM. The InputGuard interface validates every request, including tool-call requests,
+// before it is sent to the LLM. Horizon passes a request clone, so guard mutations are
+// ignored; request changes belong in the Prepare step.
 type InputGuard interface {
 	ProtectInput(*provider.Request) error
 }

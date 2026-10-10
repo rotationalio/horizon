@@ -29,6 +29,7 @@ type process struct {
 	task       *task.Task
 	input      *task.Input
 	request    *provider.Request
+	messages   prompts.Prompts // Raw, authoritative conversation history, including reasoning.
 	provider   provider.Provider
 	horizon    *Horizon
 	output     *task.Output
@@ -38,18 +39,16 @@ type process struct {
 }
 
 // Constructs a new process, cloning the input and task which may be modified.
-func newProcess(horizon *Horizon, runner task.Runner, input *task.Input, taskDefinition *task.Task, conf config.Config, client *stdhttp.Client) (p *process) {
-	p = &process{
+func newProcess(horizon *Horizon, runner task.Runner, input *task.Input, taskDefinition *task.Task, conf config.Config, client *stdhttp.Client) *process {
+	return &process{
 		horizon:    horizon,
 		runner:     runner,
 		task:       taskDefinition.Clone(),
 		input:      input.Clone(),
 		config:     conf,
 		httpClient: client,
+		parser:     schema.NewParser(conf.BestEffortParsing),
 	}
-
-	p.parser = schema.NewParser(conf.BestEffortParsing)
-	return p
 }
 
 func (p *process) Run(ctx context.Context) (output *task.Output, err error) {
@@ -84,6 +83,8 @@ func (p *process) Run(ctx context.Context) (output *task.Output, err error) {
 	defer func() {
 		// Step 6: Finalize the runner after the execution path completes.
 		p.output.Finished = time.Now()
+		// TODO: Do we want to return reasoning/unknown messages?
+		p.output.Messages = p.messages.FilterOutTypes(prompts.TypeReasoning, prompts.TypeUnknown)
 		executionErr := err
 		executionOutcome := outcomeFor(executionErr)
 		p.output.Outcome = executionOutcome
@@ -118,7 +119,7 @@ func (p *process) Run(ctx context.Context) (output *task.Output, err error) {
 	// Prepare the request object for generation.
 	p.request = &provider.Request{
 		Model:        p.task.Model.Slug,
-		Params:       p.task.Model.Parameters,
+		Params:       p.task.Model.Parameters.ProviderOnly(),
 		OutputSchema: p.task.Output.Schema,
 	}
 
@@ -128,12 +129,24 @@ func (p *process) Run(ctx context.Context) (output *task.Output, err error) {
 	}
 
 	// Step 3: Render task prompts into the provider request.
-	if err = cancelAndTrace(ctx, "task.render", p.Render); err != nil {
+	err = cancelAndTrace(ctx, "task.render", p.Render)
+	p.messages = p.request.Input
+	if err != nil {
 		return p.output, fmt.Errorf("render task prompts: %w", err)
 	}
+	p.ensureAttachmentMessage()
 
-	// Step 4: Perform one provider inference request.
-	if err = cancelAndTrace(ctx, "task.generate", p.Generate); err != nil {
+	// Step 4: Generate once, or execute capabilities until a final answer arrives.
+	generate := func(ctx context.Context) error {
+		response, err := p.Generate(ctx)
+		return p.captureResponse(response, err)
+	}
+	stage := "task.generate"
+	if len(p.task.Capabilities) > 0 {
+		generate = p.CapabilitiesLoop
+		stage = "task.capabilities_loop"
+	}
+	if err = cancelAndTrace(ctx, stage, generate); err != nil {
 		return p.output, fmt.Errorf("generate task output: %w", err)
 	}
 
@@ -179,19 +192,46 @@ func (p *process) ProcessContext(_ context.Context) (err error) {
 	return nil
 }
 
-func (p *process) ProcessAttachments(_ context.Context) (err error) {
-	if preprocessor, ok := p.runner.(task.AttachmentProcessor); ok {
-		p.request.Attachments = make(attachments.Attachments, len(p.input.Attachments))
-		for i, attachment := range p.input.Attachments {
-			if p.request.Attachments[i], err = preprocessor.ProcessAttachment(attachment); err != nil {
-				return fmt.Errorf("process attachment %d: %w", i, err)
-			}
-		}
+// ProcessAttachments applies host preprocessing to each attachment and downloads
+// and caches attachment data once for the lifetime of the process.
+func (p *process) ProcessAttachments(ctx context.Context) error {
+	if p.input.Attachments == nil {
 		return nil
 	}
 
-	// Otherwise just use the attachments as defined in the input.
-	p.request.Attachments = p.input.Attachments
+	preprocessor, hasAP := p.runner.(task.AttachmentProcessor)
+	p.request.Attachments = make(attachments.Attachments, 0, len(p.input.Attachments))
+	for i, attachment := range p.input.Attachments {
+		if err := ctx.Err(); err != nil {
+			return err
+		}
+
+		if attachment == nil {
+			return errors.ErrNilAttachment
+		}
+
+		if hasAP {
+			var err error
+			if attachment, err = preprocessor.ProcessAttachment(attachment); err != nil {
+				return fmt.Errorf("process attachment %d: %w", i, err)
+			}
+		}
+
+		if attachment == nil {
+			return errors.ErrNilAttachment
+		}
+
+		// Only download the attachment data if it's not already cached.
+		copy := attachment.Clone()
+		if copy.Data == nil && copy.URL != "" {
+			data, err := copy.Bytes(ctx)
+			if err != nil {
+				return fmt.Errorf("download attachment %d: %w", i, err)
+			}
+			copy.Data = append([]byte{}, data...)
+		}
+		p.request.Attachments = append(p.request.Attachments, copy)
+	}
 	return nil
 }
 
@@ -238,4 +278,24 @@ func cancelAndTrace(ctx context.Context, name string, fn func(context.Context) e
 	span.End()
 
 	return errors.Join(err, ctx.Err())
+}
+
+// Checks for an existing user message; if none exists, supplies a default one
+// for attachment-only input.
+func (p *process) ensureAttachmentMessage() {
+	if len(p.request.Attachments) == 0 {
+		return
+	}
+
+	for _, message := range p.messages {
+		if message != nil && message.Role == prompts.RoleUser {
+			return
+		}
+	}
+
+	p.messages = append(p.messages, &prompts.Prompt{
+		Role:    prompts.RoleUser,
+		Type:    prompts.TypeMessage,
+		Content: "This message contains only attachments.",
+	})
 }

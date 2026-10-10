@@ -14,6 +14,7 @@ import (
 	"go.rtnl.ai/horizon/attachments"
 	"go.rtnl.ai/horizon/config"
 	"go.rtnl.ai/horizon/errors"
+	"go.rtnl.ai/horizon/schema"
 
 	"go.rtnl.ai/horizon/prompts"
 	"go.rtnl.ai/horizon/provider"
@@ -31,13 +32,14 @@ type process struct {
 	provider   provider.Provider
 	horizon    *Horizon
 	output     *task.Output
+	parser     schema.Parser
 	config     config.Config
 	httpClient *stdhttp.Client
 }
 
 // Constructs a new process, cloning the input and task which may be modified.
-func newProcess(horizon *Horizon, runner task.Runner, input *task.Input, taskDefinition *task.Task, conf config.Config, client *stdhttp.Client) *process {
-	return &process{
+func newProcess(horizon *Horizon, runner task.Runner, input *task.Input, taskDefinition *task.Task, conf config.Config, client *stdhttp.Client) (p *process) {
+	p = &process{
 		horizon:    horizon,
 		runner:     runner,
 		task:       taskDefinition.Clone(),
@@ -45,6 +47,9 @@ func newProcess(horizon *Horizon, runner task.Runner, input *task.Input, taskDef
 		config:     conf,
 		httpClient: client,
 	}
+
+	p.parser = schema.NewParser(conf.BestEffortParsing)
+	return p
 }
 
 func (p *process) Run(ctx context.Context) (output *task.Output, err error) {

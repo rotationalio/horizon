@@ -21,6 +21,7 @@ type Config struct {
 	FinalizeTimeout            time.Duration `split_words:"true" default:"8s" desc:"the maximum duration allowed for runner finalization"`
 	ProviderRequestTimeout     time.Duration `split_words:"true" default:"128s" desc:"the maximum duration of an individual inference request"`
 	HTTPClientTimeout          time.Duration `split_words:"true" default:"768s" desc:"the maximum duration of generic Horizon HTTP requests"`
+	BestEffortParsing          bool          `split_words:"true" default:"false" desc:"set to true for best effort output parsing"`
 }
 
 func New() (conf *Config, err error) {

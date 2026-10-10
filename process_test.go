@@ -473,7 +473,7 @@ func TestProcessRunCaptureResponse(t *testing.T) {
 				MimeType: mime.ApplicationSchemaJSON,
 			},
 			want:     json.RawMessage(`[1,2]`),
-			wantMIME: mime.ApplicationJSON,
+			wantMIME: mime.ApplicationSchemaJSON,
 		},
 		{
 			name:     "JSON null",

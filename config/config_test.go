@@ -49,6 +49,7 @@ func TestAttachmentDownloadConfigDefaultsAndOverrides(t *testing.T) {
 	clearEnv(t, "HORIZON_FINALIZE_TIMEOUT")
 	clearEnv(t, "HORIZON_PROVIDER_REQUEST_TIMEOUT")
 	clearEnv(t, "HORIZON_HTTP_CLIENT_TIMEOUT")
+	clearEnv(t, "HORIZON_BEST_EFFORT_PARSING")
 
 	conf, err := config.New()
 	require.NoError(t, err)
@@ -59,6 +60,7 @@ func TestAttachmentDownloadConfigDefaultsAndOverrides(t *testing.T) {
 	require.Equal(t, 8*time.Second, conf.FinalizeTimeout)
 	require.Equal(t, 128*time.Second, conf.ProviderRequestTimeout)
 	require.Equal(t, 768*time.Second, conf.HTTPClientTimeout)
+	require.False(t, conf.BestEffortParsing)
 
 	t.Setenv("HORIZON_PROVIDER_CACHE_SIZE", "64")
 	t.Setenv("HORIZON_ATTACHMENT_MAX_DOWNLOAD_BYTES", "1048576")
@@ -67,6 +69,7 @@ func TestAttachmentDownloadConfigDefaultsAndOverrides(t *testing.T) {
 	t.Setenv("HORIZON_FINALIZE_TIMEOUT", "3s")
 	t.Setenv("HORIZON_PROVIDER_REQUEST_TIMEOUT", "45s")
 	t.Setenv("HORIZON_HTTP_CLIENT_TIMEOUT", "5m")
+	t.Setenv("HORIZON_BEST_EFFORT_PARSING", "true")
 	conf, err = config.New()
 	require.NoError(t, err)
 	require.Equal(t, 64, conf.ProviderCacheSize)
@@ -76,6 +79,7 @@ func TestAttachmentDownloadConfigDefaultsAndOverrides(t *testing.T) {
 	require.Equal(t, 3*time.Second, conf.FinalizeTimeout)
 	require.Equal(t, 45*time.Second, conf.ProviderRequestTimeout)
 	require.Equal(t, 5*time.Minute, conf.HTTPClientTimeout)
+	require.True(t, conf.BestEffortParsing)
 }
 
 // Rejects non-positive attachment download limits and timeouts.

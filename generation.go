@@ -2,7 +2,6 @@ package horizon
 
 import (
 	"context"
-	"encoding/json"
 	"fmt"
 	"strings"
 
@@ -90,7 +89,7 @@ func (p *process) recordUsage(usage provider.Usage) {
 }
 
 // Captures a non-nil provider response and stores it in the output.
-func (p *process) captureResponse(response *provider.Response) error {
+func (p *process) captureResponse(response *provider.Response) (err error) {
 
 	// Use the provider's resolved model when available, otherwise keep the
 	// requested slug.
@@ -143,33 +142,19 @@ func (p *process) captureResponse(response *provider.Response) error {
 
 	text := strings.Join(content, "\n")
 
-	// Without a declared output MIME type, expose generated content as plain text.
+	// If there is no output schema, just return the raw text.
 	if p.task.Output.Schema == nil || p.task.Output.Schema.MimeType.IsUnknown() {
 		p.output.MimeType = mime.TextPlain
 		p.output.Output = text
 		return nil
 	}
 
-	switch p.task.Output.Schema.MimeType {
-	case mime.ApplicationJSON, mime.ApplicationSchemaJSON:
-		// TODO: Normalize model output before parsing, including JSON wrapped in Markdown code fences.
-		var raw json.RawMessage
-		if err := json.Unmarshal([]byte(text), &raw); err != nil {
-			// Return the raw text as-is if the JSON is invalid so that the
-			// caller may debug if necessary.
-			p.output.Output = text
-			return fmt.Errorf("%w: invalid JSON response: %w", errors.ErrInvalidModelOutput, err)
-		}
-		// TODO: Validate the JSON result against the task's declared JSON Schema, not just its syntax.
-		p.output.Output = raw
-		p.output.MimeType = mime.ApplicationJSON
-	case mime.TextPlain:
+	// Parse the output into the destination schema.
+	// If there is a parsing error, return the raw text for auditing purposes.
+	if p.output.Output, err = p.parser.Parse(text, p.task.Output.Schema); err != nil {
 		p.output.Output = text
-		p.output.MimeType = mime.TextPlain
-	default:
-		// Preserve the task's declared MIME type for other text-based formats.
-		p.output.Output = text
-		p.output.MimeType = p.task.Output.Schema.MimeType
+		return errors.Join(errors.ErrInvalidModelOutput, err)
 	}
+	p.output.MimeType = p.task.Output.Schema.MimeType
 	return nil
 }

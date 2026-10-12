@@ -52,8 +52,10 @@ func newProcess(horizon *Horizon, runner task.Runner, input *task.Input, taskDef
 }
 
 func (p *process) Run(ctx context.Context) (output *task.Output, err error) {
-
 	ctx, span := tracer.Start(ctx, "task.execute")
+	if p.task != nil {
+		span.SetAttributes(attribute.String("task.slug", p.task.Slug))
+	}
 	defer func() {
 		if err != nil {
 			span.SetStatus(codes.Error, "task execution failed")

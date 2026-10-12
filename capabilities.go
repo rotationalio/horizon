@@ -209,7 +209,10 @@ func (e *capabilityExecution) validateCallIDs(calls []prompts.ToolCall) error {
 // failures stop the loop.
 func (p *process) executeCapability(ctx context.Context, execution *capabilityExecution, call prompts.ToolCall) (err error) {
 	ctx, span := tracer.Start(ctx, "capabilities.execute")
-	span.SetAttributes(attribute.String("capabilities.name", call.Name))
+	span.SetAttributes(
+		attribute.String("capabilities.name", call.Name),
+		attribute.String("capabilities.call_id", call.CallID),
+	)
 	defer func() {
 		if err != nil {
 			span.SetStatus(codes.Error, "capability failed")
@@ -278,7 +281,16 @@ func (p *process) executeCapability(ctx context.Context, execution *capabilityEx
 		if !executionErr.Retryable {
 			return fmt.Errorf("execute capability %q: %w", name, executionErr)
 		}
-		span.AddEvent("capabilities.retryable_failure")
+		retryAttributes := []attribute.KeyValue{
+			attribute.String("message", executionErr.Message),
+		}
+		if executionErr.Cause != nil {
+			retryAttributes = append(retryAttributes,
+				attribute.String("error", executionErr.Cause.Error()),
+				attribute.String("error.type", fmt.Sprintf("%T", executionErr.Cause)),
+			)
+		}
+		span.AddEvent("capabilities.retryable_failure", trace.WithAttributes(retryAttributes...))
 		p.messages = append(p.messages, &prompts.Prompt{
 			Role: prompts.RoleTool,
 			Type: prompts.TypeMessage,

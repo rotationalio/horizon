@@ -33,8 +33,18 @@ func (p *process) Generate(ctx context.Context) (*provider.Response, error) {
 	// Perform generation inside its own span.
 	p.output.Usage.Invocations++
 	requestCtx, span := tracer.Start(ctx, "provider.generate")
+	span.SetAttributes(attribute.String("provider.model", p.request.Model))
 	response, generateErr := p.provider.Generate(requestCtx, p.request)
-	span.AddEvent("provider.response", trace.WithAttributes(attribute.Bool("provider.response_present", response != nil)))
+	responseAttributes := []attribute.KeyValue{attribute.Bool("provider.response_present", response != nil)}
+	if response != nil {
+		responseAttributes = append(responseAttributes,
+			attribute.String("provider.response_model", response.Model),
+			attribute.Int64("provider.input_tokens", response.Usage.InputTokens),
+			attribute.Int64("provider.output_tokens", response.Usage.OutputTokens),
+			attribute.Int64("provider.total_tokens", response.Usage.TotalTokens),
+		)
+	}
+	span.AddEvent("provider.response", trace.WithAttributes(responseAttributes...))
 	if generateErr != nil {
 		span.SetStatus(codes.Error, "provider request failed")
 	}

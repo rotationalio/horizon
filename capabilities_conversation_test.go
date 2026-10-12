@@ -16,6 +16,7 @@ import (
 	"go.rtnl.ai/horizon/errors"
 	"go.rtnl.ai/horizon/params"
 	"go.rtnl.ai/horizon/prompts"
+	"go.rtnl.ai/horizon/prompts/templates"
 	"go.rtnl.ai/horizon/provider"
 	mockprovider "go.rtnl.ai/horizon/provider/mock"
 	"go.rtnl.ai/horizon/schema"
@@ -32,7 +33,7 @@ func TestCapabilitiesConversation(t *testing.T) {
 	// Setup: compose the existing mocks and script two capability batches followed
 	// by a final answer. No real model or executor decides the test's behavior.
 	runner := newCapabilityTestRunner("lookup", "other")
-	renderer := &mock.Renderer{OnRender: func(prompts.Templates, prompts.Context) (prompts.Prompts, error) {
+	renderer := &mock.Renderer{OnRender: func(templates.Templates, prompts.Context) (prompts.Prompts, error) {
 		return prompts.Prompts{{Role: prompts.RoleUser, Type: prompts.TypeMessage, Content: "question"}}, nil
 	}}
 	composed := struct {
@@ -120,12 +121,12 @@ func TestCapabilitiesConversation(t *testing.T) {
 		}
 	}
 
-	// Finalize receives the final answer and full history, with reasoning filtered out.
+	// Finalize receives the final answer and the complete, unfiltered transcript.
 	runner.Runner.OnFinalize = func(ctx context.Context, output *task.Output, executionErr error) error {
 		require.NoError(t, ctx.Err())
 		require.NoError(t, executionErr)
 		require.Equal(t, "guarded final answer", output.Output)
-		require.Len(t, output.Messages, 7, "only reasoning is removed from the complete eight-message transcript")
+		require.Len(t, output.Messages, 8, "requires all messages to pass through filtering")
 		return nil
 	}
 
@@ -218,7 +219,7 @@ func TestCapabilitiesInputGuardMutationsIgnored(t *testing.T) {
 
 	// Render the existing conversation and check the provider's request after
 	// input validation. Its nested data should still match the original setup.
-	renderer := &mock.Renderer{OnRender: func(prompts.Templates, prompts.Context) (prompts.Prompts, error) {
+	renderer := &mock.Renderer{OnRender: func(templates.Templates, prompts.Context) (prompts.Prompts, error) {
 		return input, nil
 	}}
 	host := struct {
@@ -369,7 +370,7 @@ func TestCapabilitiesConcurrentIsolation(t *testing.T) {
 			definition.Model.Slug = id
 			return nil
 		}
-		renderer := &mock.Renderer{OnRender: func(prompts.Templates, prompts.Context) (prompts.Prompts, error) {
+		renderer := &mock.Renderer{OnRender: func(templates.Templates, prompts.Context) (prompts.Prompts, error) {
 			return prompts.Prompts{{Role: prompts.RoleUser, Type: prompts.TypeMessage, Content: id}}, nil
 		}}
 		runner.CapabilityRunner.OnExecuteCapability = func(_ context.Context, request capabilities.Request) (capabilities.Response, *capabilities.Error) {
@@ -439,7 +440,7 @@ func TestCapabilitiesExistingHistory(t *testing.T) {
 				*mock.Renderer
 			}{
 				runner,
-				&mock.Renderer{OnRender: func(prompts.Templates, prompts.Context) (prompts.Prompts, error) { return history, nil }},
+				&mock.Renderer{OnRender: func(templates.Templates, prompts.Context) (prompts.Prompts, error) { return history, nil }},
 			}
 			turn := 0
 			inference := mockprovider.New(ulid.Make())

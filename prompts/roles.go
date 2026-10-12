@@ -24,3 +24,8 @@ var roleNames = []string{
 	"tool",
 	"function",
 }
+
+// IsKnown reports whether r is a supported, non-unknown prompt role.
+func (r Role) IsKnown() bool {
+	return r > RoleUnknown && r < Role(len(roleNames))
+}

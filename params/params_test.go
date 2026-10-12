@@ -45,9 +45,10 @@ func TestProviderOnly(t *testing.T) {
 		// Assert only the execution option was removed and source values stayed intact.
 		_, exists := provider.Get(params.MaxToolTurns)
 		require.False(t, exists)
-		turns, exists := original.MaxToolTurns()
+		turns, exists, err := original.MaxToolTurns()
+		require.NoError(t, err)
 		require.True(t, exists)
-		require.Equal(t, int64(2), turns)
+		require.Equal(t, uint16(2), turns)
 		temperature, exists := original.Temperature()
 		require.True(t, exists)
 		require.Equal(t, 0.5, temperature)

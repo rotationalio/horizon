@@ -35,6 +35,7 @@ import (
 	"go.rtnl.ai/horizon/capabilities"
 	"go.rtnl.ai/horizon/internal/mock"
 	"go.rtnl.ai/horizon/prompts"
+	"go.rtnl.ai/horizon/prompts/templates"
 	"go.rtnl.ai/horizon/provider"
 	"go.rtnl.ai/horizon/task"
 )
@@ -138,11 +139,11 @@ func (m *AttachmentProcessor) ProcessAttachment(attachment *attachments.Attachme
 // Renderer mocks task.Renderer. It panics if OnRender is unset.
 type Renderer struct {
 	mock.Mock
-	OnRender func(prompts.Templates, prompts.Context) (prompts.Prompts, error)
+	OnRender func(templates.Templates, prompts.Context) (prompts.Prompts, error)
 }
 
 // Render invokes OnRender with the supplied templates and context. It panics if OnRender is unset.
-func (m *Renderer) Render(templates prompts.Templates, ctx prompts.Context) (prompts.Prompts, error) {
+func (m *Renderer) Render(templates templates.Templates, ctx prompts.Context) (prompts.Prompts, error) {
 	m.Call(Render)
 	if m.OnRender == nil {
 		panic("mock.Renderer.OnRender callback is not set")

@@ -128,3 +128,18 @@ func (p Prompts) FilterOutTypes(types ...Type) Prompts {
 	}
 	return out
 }
+
+// FilterOutRoles returns a new slice with the given [Role]s removed, preserving
+// order and nil entries. The retained prompts themselves are not copied.
+func (p Prompts) FilterOutRoles(roles ...Role) Prompts {
+	if p == nil {
+		return nil
+	}
+	out := make(Prompts, 0, len(p))
+	for _, prompt := range p {
+		if prompt == nil || !slices.Contains(roles, prompt.Role) {
+			out = append(out, prompt)
+		}
+	}
+	return out
+}

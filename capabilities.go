@@ -22,7 +22,7 @@ type capabilityExecution struct {
 	definitions []capabilities.Definition
 	advertised  map[capabilities.Name]struct{}
 	seen        map[string]struct{}
-	maxTurns    int64
+	maxTurns    uint16
 }
 
 // PrepareCapabilities snapshots selection and budget, resolves definitions once,
@@ -31,12 +31,16 @@ func (p *process) PrepareCapabilities(ctx context.Context) (*capabilityExecution
 	// Snapshot task selection and resolve the effective turn budget.
 	selected := slices.Clone(p.task.Capabilities)
 	maxTurns := p.config.MaxToolTurns
-	if p.task.Model.Parameters != nil {
-		if configured, ok := p.task.Model.Parameters.MaxToolTurns(); ok {
+	if parameters := p.task.Model.Parameters; parameters != nil {
+		configured, exists, err := parameters.MaxToolTurns()
+		if err != nil {
+			return nil, err
+		}
+		if exists {
 			maxTurns = configured
 		}
 	}
-	if maxTurns <= 0 {
+	if maxTurns == 0 {
 		return nil, fmt.Errorf("selected capabilities require a positive max_tool_turns allowance")
 	}
 
@@ -124,7 +128,7 @@ func (p *process) CapabilitiesLoop(ctx context.Context) error {
 	}
 	p.request.Tools = execution.definitions
 
-	var turns int64
+	var turns uint16
 	for {
 		// Check cancellation each turn.
 		if err := ctx.Err(); err != nil {

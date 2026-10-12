@@ -23,3 +23,8 @@ var typeNames = []string{
 	"content_filter",
 	"reasoning",
 }
+
+// IsKnown reports whether t is a supported, non-unknown prompt type.
+func (t Type) IsKnown() bool {
+	return t > TypeUnknown && t < Type(len(typeNames))
+}

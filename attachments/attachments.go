@@ -49,23 +49,23 @@ func (a *Attachment) Clone() *Attachment {
 	return &cloned
 }
 
-// Bytes downloads and returns the attachment data, downloading it with ctx when
-// only a URL is provided. A non-nil Data slice, even if empty, is already
-// resolved. Remote bodies larger than the configured attachment limit are
-// rejected.
-func (a *Attachment) Bytes(ctx context.Context) ([]byte, error) {
-	if a.Data != nil {
-		// We have already resolved the data so we do not need to redownload it.
-		return a.Data, nil
+// Download populates Data from URL if the attachment has not already been downloaded.
+// A non-nil Data slice, even if empty, is already resolved. Remote bodies larger than
+// the configured attachment limit are rejected.
+func (a *Attachment) Download(ctx context.Context) error {
+	if a == nil {
+		return fmt.Errorf("cannot download a nil attachment")
 	}
-
+	if a.Data != nil {
+		return nil
+	}
 	if a.URL == "" {
-		return nil, fmt.Errorf("attachment %q has no data or URL", a.Filename)
+		return fmt.Errorf("attachment %q has no data or URL", a.Filename)
 	}
 
 	conf, err := config.Get()
 	if err != nil {
-		return nil, fmt.Errorf("load attachment download configuration: %w", err)
+		return fmt.Errorf("load attachment download configuration: %w", err)
 	}
 
 	ctx, cancel := context.WithTimeout(ctx, conf.AttachmentDownloadTimeout)
@@ -76,33 +76,48 @@ func (a *Attachment) Bytes(ctx context.Context) ([]byte, error) {
 		MaxBodyBytes: conf.AttachmentMaxDownloadBytes,
 	})
 	if err != nil {
-		return nil, fmt.Errorf("fetch attachment %q: %w", a.Filename, err)
+		return fmt.Errorf("fetch attachment %q: %w", a.Filename, err)
 	}
-	return data, nil
+	a.Data = data
+	return nil
+}
+
+// DownloadClone downloads the attachment if needed, then returns an independent copy.
+func (a *Attachment) DownloadClone(ctx context.Context) (*Attachment, error) {
+	if err := a.Download(ctx); err != nil {
+		return nil, err
+	}
+	return a.Clone(), nil
+}
+
+// Bytes downloads the attachment if needed and returns its data.
+func (a *Attachment) Bytes(ctx context.Context) ([]byte, error) {
+	if err := a.Download(ctx); err != nil {
+		return nil, err
+	}
+	return a.Data, nil
 }
 
 // Text returns the attachment data as text. If the attachment data is not
 // already resolved, it will be downloaded using ctx.
 func (a *Attachment) Text(ctx context.Context) (string, error) {
-	data, err := a.Bytes(ctx)
-	if err != nil {
+	if err := a.Download(ctx); err != nil {
 		return "", err
 	}
-	return string(data), nil
+	return string(a.Data), nil
 }
 
 // Base64URI returns the attachment as a base64-encoded data URI. If the
 // attachment data is not already resolved, it will be downloaded using ctx.
 func (a *Attachment) Base64URI(ctx context.Context) (string, error) {
-	data, err := a.Bytes(ctx)
+	if err := a.Download(ctx); err != nil {
+		return "", err
+	}
+	contentType, err := a.contentType(a.Data)
 	if err != nil {
 		return "", err
 	}
-	contentType, err := a.contentType(data)
-	if err != nil {
-		return "", err
-	}
-	return "data:" + contentType + ";base64," + base64.StdEncoding.EncodeToString(data), nil
+	return "data:" + contentType + ";base64," + base64.StdEncoding.EncodeToString(a.Data), nil
 }
 
 // Resolves the explicit content type or infers one from the filename or bytes.

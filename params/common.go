@@ -3,6 +3,7 @@ package params
 import (
 	"encoding/json"
 	"fmt"
+
 	"strconv"
 )
 
@@ -322,8 +323,16 @@ func (p *Params) MaxToolCalls() (int64, bool) {
 
 // The maximum number of tool turns for the horizon tool loop, rather than on each
 // individual model request.
-func (p *Params) MaxToolTurns() (int64, bool) {
-	return p.Int(MaxToolTurns)
+func (p *Params) MaxToolTurns() (uint16, bool, error) {
+	_, exists := p.Get(MaxToolTurns)
+	if !exists {
+		return 0, false, nil
+	}
+	turns, ok := p.Int(MaxToolTurns)
+	if !ok || turns < 0 || turns > int64(^uint16(0)) {
+		return 0, false, fmt.Errorf("max_tool_turns must fit within uint16")
+	}
+	return uint16(turns), true, nil
 }
 
 // The truncation strategy to use for the model response.

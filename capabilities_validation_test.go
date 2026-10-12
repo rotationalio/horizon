@@ -14,6 +14,7 @@ import (
 	"go.rtnl.ai/horizon/errors"
 	"go.rtnl.ai/horizon/params"
 	"go.rtnl.ai/horizon/prompts"
+	"go.rtnl.ai/horizon/prompts/templates"
 	"go.rtnl.ai/horizon/provider"
 	mockprovider "go.rtnl.ai/horizon/provider/mock"
 	"go.rtnl.ai/horizon/schema"
@@ -206,7 +207,7 @@ func TestCapabilitiesBatchValidation(t *testing.T) {
 				host = struct {
 					*capabilityTestRunner
 					*mock.Renderer
-				}{runner, &mock.Renderer{OnRender: func(prompts.Templates, prompts.Context) (prompts.Prompts, error) { return tt.messages, nil }}}
+				}{runner, &mock.Renderer{OnRender: func(templates.Templates, prompts.Context) (prompts.Prompts, error) { return tt.messages, nil }}}
 			}
 
 			// Execute; validation must complete before any call in the batch dispatches.

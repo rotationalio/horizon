@@ -90,19 +90,35 @@ func TestBase64URIRejectsInvalidContentType(t *testing.T) {
 	require.Error(t, err)
 }
 
-// Verifies URL-backed attachments are downloaded through the shared HTTP client.
+// Verifies DownloadClone downloads the original before cloning and helpers reuse its data.
 func TestAttachmentDownload(t *testing.T) {
 	setAttachmentConfig(t, 1024, time.Second)
+	requests := 0
 	server := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, _ *http.Request) {
+		requests++
 		_, err := w.Write([]byte("downloaded"))
 		require.NoError(t, err)
 	}))
 	t.Cleanup(server.Close)
 
-	attachment := &attachments.Attachment{Filename: "note.txt", URL: server.URL}
+	attachment := &attachments.Attachment{Filename: "note.txt", ContentType: "text/plain", URL: server.URL}
+	cloned, err := attachment.DownloadClone(context.Background())
+	require.NoError(t, err)
+	require.Equal(t, []byte("downloaded"), attachment.Data)
+	require.Equal(t, attachment.Data, cloned.Data)
+	require.NotSame(t, attachment, cloned)
+	require.NotSame(t, &attachment.Data[0], &cloned.Data[0])
+
 	data, err := attachment.Bytes(context.Background())
 	require.NoError(t, err)
 	require.Equal(t, []byte("downloaded"), data)
+	text, err := attachment.Text(context.Background())
+	require.NoError(t, err)
+	require.Equal(t, "downloaded", text)
+	uri, err := attachment.Base64URI(context.Background())
+	require.NoError(t, err)
+	require.Equal(t, "data:text/plain;base64,ZG93bmxvYWRlZA==", uri)
+	require.Equal(t, 1, requests)
 }
 
 // Verifies cancellation is propagated to URL-backed attachment downloads.

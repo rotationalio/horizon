@@ -628,7 +628,7 @@ func TestCapabilitiesBudgetBoundaries(t *testing.T) {
 	t.Cleanup(func() { require.NoError(t, config.Set(original)) })
 	tests := []struct {
 		name         string
-		configTurns  int64
+		configTurns  uint16
 		override     *int64
 		batches      int
 		wantCalls    int
@@ -722,12 +722,46 @@ func TestCapabilitiesBudgetBoundaries(t *testing.T) {
 			require.Len(t, output.Messages, tt.wantMessages)
 			runner.CapabilityRunner.AssertCalled(t, mock.ExecuteCapability, tt.wantCalls)
 			if tt.override != nil {
-				value, exists := output.Model.Parameters.MaxToolTurns()
+				value, exists, err := output.Model.Parameters.MaxToolTurns()
+				require.NoError(t, err)
 				require.True(t, exists)
-				require.Equal(t, *tt.override, value)
+				require.Equal(t, uint16(*tt.override), value)
 			}
 		})
 	}
+}
+
+// TestCapabilitiesTaskMaxTurnsRejectsUint16Overflow verifies task overrides cannot overflow the uint16 turn counter.
+func TestCapabilitiesTaskMaxTurnsRejectsUint16Overflow(t *testing.T) {
+	original, err := config.Get()
+	require.NoError(t, err)
+	t.Cleanup(func() { require.NoError(t, config.Set(original)) })
+
+	conf := original
+	conf.MaxToolTurns = 1
+	require.NoError(t, config.Set(conf))
+
+	runner := newCapabilityTestRunner("lookup")
+	prepare := runner.Runner.OnPrepare
+	runner.Runner.OnPrepare = func(ctx context.Context, definition *task.Task) error {
+		if err := prepare(ctx, definition); err != nil {
+			return err
+		}
+		definition.Model.Parameters = params.New(map[string]any{params.MaxToolTurns: int64(1 << 16)})
+		return nil
+	}
+
+	inference := mockprovider.New(ulid.Make())
+	inference.OnGenerate = func(context.Context, *provider.Request) (*provider.Response, error) {
+		require.FailNow(t, "inference must not run with an overflowing turn limit")
+		return nil, nil
+	}
+
+	output, err := runProcessTest(t, context.Background(), inference, runner, &schema.Output{})
+
+	require.ErrorContains(t, err, "must fit within uint16")
+	require.Zero(t, output.Usage.Invocations)
+	runner.CapabilityRunner.AssertNotCalled(t, mock.LookupCapabilities)
 }
 
 // Mixes recoverable and terminal outcomes in a batch of three calls. Recoverable results

@@ -16,6 +16,7 @@ import (
 	"github.com/stretchr/testify/require"
 	"go.rtnl.ai/horizon/attachments"
 	"go.rtnl.ai/horizon/prompts"
+	"go.rtnl.ai/horizon/prompts/templates"
 	"go.rtnl.ai/horizon/provider"
 	mockprovider "go.rtnl.ai/horizon/provider/mock"
 	"go.rtnl.ai/horizon/provider/openai"
@@ -41,7 +42,7 @@ func TestCapabilitiesAttachmentCache(t *testing.T) {
 				defer server.Close()
 				file := &attachments.Attachment{URL: server.URL, ContentType: "text/plain", Filename: "input.txt"}
 				runner := newCapabilityTestRunner("lookup")
-				renderer := &mock.Renderer{OnRender: func(prompts.Templates, prompts.Context) (prompts.Prompts, error) {
+				renderer := &mock.Renderer{OnRender: func(templates.Templates, prompts.Context) (prompts.Prompts, error) {
 					messages := prompts.Prompts{{Role: prompts.RoleSystem, Type: prompts.TypeMessage, Content: "system"}}
 					for i := 0; i < users; i++ {
 						messages = append(messages, &prompts.Prompt{Role: prompts.RoleUser, Type: prompts.TypeMessage, Content: fmt.Sprintf("user %d", i)})

@@ -8,6 +8,7 @@ import (
 	"go.rtnl.ai/horizon/attachments"
 	"go.rtnl.ai/horizon/capabilities"
 	"go.rtnl.ai/horizon/prompts"
+	"go.rtnl.ai/horizon/prompts/templates"
 	"go.rtnl.ai/horizon/provider"
 )
 
@@ -61,7 +62,7 @@ type AttachmentProcessor interface {
 // sent to the LLM. If a runner does not implement this interface, the prompts will be
 // rendered using the default renderer.
 type Renderer interface {
-	Render(prompts.Templates, prompts.Context) (prompts.Prompts, error)
+	Render(templates.Templates, prompts.Context) (prompts.Prompts, error)
 }
 
 // InputGuards are used to validate the input before it is sent to the LLM, particularly

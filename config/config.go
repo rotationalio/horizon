@@ -5,6 +5,7 @@ import (
 	"time"
 
 	"go.rtnl.ai/confire"
+	"go.rtnl.ai/horizon/prompts"
 )
 
 // Prefix sets the prefix for Horizon environment variables.
@@ -12,16 +13,18 @@ const Prefix = "horizon"
 
 // Config contains Horizon execution and rendering settings.
 type Config struct {
-	RendererCacheSize          int           `split_words:"true" default:"128" desc:"the size of the renderer cache"`
-	ProviderCacheSize          int           `split_words:"true" default:"32" desc:"the maximum number of provider instances to cache"`
-	MaxToolTurns               int64         `split_words:"true" default:"32" desc:"the maximum number of model/tool turns; 0 disables tool calling"`
-	AttachmentMaxDownloadBytes int64         `split_words:"true" default:"67108864" desc:"the maximum number of bytes to download for an attachment in bytes (default 64mb)"`
-	AttachmentDownloadTimeout  time.Duration `split_words:"true" default:"8s" desc:"the maximum duration of a remote attachment download"`
-	ExecutionTimeout           time.Duration `split_words:"true" default:"0s" desc:"the maximum duration of one execution; 0 uses only the caller context"`
-	FinalizeTimeout            time.Duration `split_words:"true" default:"8s" desc:"the maximum duration allowed for runner finalization"`
-	ProviderRequestTimeout     time.Duration `split_words:"true" default:"128s" desc:"the maximum duration of an individual inference request"`
-	HTTPClientTimeout          time.Duration `split_words:"true" default:"768s" desc:"the maximum duration of generic Horizon HTTP requests"`
-	BestEffortParsing          bool          `split_words:"true" default:"false" desc:"set to true for best effort output parsing (extracts JSON values from surrounding text before parsing and trims whitespace for other formats)"`
+	RendererCacheSize          int            `split_words:"true" default:"128" desc:"the size of the renderer cache"`
+	ProviderCacheSize          int            `split_words:"true" default:"32" desc:"the maximum number of provider instances to cache"`
+	MaxToolTurns               uint16         `split_words:"true" default:"32" desc:"the maximum number of model/tool turns; 0 disables tool calling"`
+	AttachmentMaxDownloadBytes int64          `split_words:"true" default:"67108864" desc:"the maximum number of bytes to download for an attachment in bytes (default 64mb)"`
+	AttachmentDownloadTimeout  time.Duration  `split_words:"true" default:"8s" desc:"the maximum duration of a remote attachment download"`
+	ExecutionTimeout           time.Duration  `split_words:"true" default:"0s" desc:"the maximum duration of one execution; 0 uses only the caller context"`
+	FinalizeTimeout            time.Duration  `split_words:"true" default:"8s" desc:"the maximum duration allowed for runner finalization"`
+	ProviderRequestTimeout     time.Duration  `split_words:"true" default:"128s" desc:"the maximum duration of an individual inference request"`
+	HTTPClientTimeout          time.Duration  `split_words:"true" default:"768s" desc:"the maximum duration of generic Horizon HTTP requests"`
+	BestEffortParsing          bool           `split_words:"true" default:"false" desc:"set to true for best effort output parsing (extracts JSON values from surrounding text before parsing and trims whitespace for other formats)"`
+	FilterOutputMessageTypes   []prompts.Type `split_words:"true" desc:"filters out these prompt types from the output messages"`
+	FilterOutputMessageRoles   []prompts.Role `split_words:"true" desc:"filters out these roles from the output messages"`
 }
 
 func New() (conf *Config, err error) {
@@ -39,9 +42,7 @@ func (c Config) Validate() (err error) {
 	if c.ProviderCacheSize < 1 {
 		err = confire.Join(err, confire.Invalid("horizon", "providerCacheSize", "must be greater than 0"))
 	}
-	if c.MaxToolTurns < 0 {
-		err = confire.Join(err, confire.Invalid("horizon", "maxToolTurns", "must not be negative"))
-	}
+
 	if c.AttachmentMaxDownloadBytes <= 0 {
 		err = confire.Join(err, confire.Invalid("horizon", "attachmentMaxDownloadBytes", "must be greater than 0"))
 	}

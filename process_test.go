@@ -12,9 +12,11 @@ import (
 
 	"go.rtnl.ai/horizon"
 	"go.rtnl.ai/horizon/attachments"
+	"go.rtnl.ai/horizon/config"
 	"go.rtnl.ai/horizon/errors"
 	"go.rtnl.ai/horizon/params"
 	"go.rtnl.ai/horizon/prompts"
+	"go.rtnl.ai/horizon/prompts/templates"
 	"go.rtnl.ai/horizon/provider"
 	mockprovider "go.rtnl.ai/horizon/provider/mock"
 	"go.rtnl.ai/horizon/schema"
@@ -534,7 +536,7 @@ func TestProcessRunCaptureResponse(t *testing.T) {
 	for _, tt := range tests {
 		t.Run(tt.name, func(t *testing.T) {
 			// Setup: return the case's response from a mock provider; use real response processing.
-			wantMessages := append(prompts.Prompts{}, tt.messages.FilterOutTypes(prompts.TypeReasoning, prompts.TypeUnknown)...)
+			wantMessages := append(prompts.Prompts{}, tt.messages...)
 			response := processTestResponse()
 			response.Model = tt.model
 			response.Output = tt.messages
@@ -577,7 +579,7 @@ func TestProcessRunCaptureResponse(t *testing.T) {
 				require.Equal(t, task.OutcomeSucceeded, output.Outcome)
 			}
 
-			// History is independent of final-answer decoding, but excludes reasoning and unknown types.
+			// History is independent of final-answer decoding and retains every unfiltered message.
 			require.Equal(t, wantMessages, output.Messages)
 
 			// Every case checks content, MIME type, and attachments, including empty results.
@@ -1025,10 +1027,9 @@ func TestProcessConcurrentIsolation(t *testing.T) {
 	require.Same(t, &config, original.Provider)
 }
 
-// Returned history keeps guarded input and accepted output, excluding reasoning and unknown types.
+// TestProcessOutputMessages verifies returned history retains reasoning and unknown types by default.
 func TestProcessOutputMessages(t *testing.T) {
-	// Setup: reason alongside a final answer. The provider response must retain
-	// reasoning for replay, while the application receives filtered history.
+	// Setup: return reasoning, an unknown type, and a final answer in one response.
 	input := &prompts.Prompt{Role: prompts.RoleUser, Type: prompts.TypeMessage, Content: "question"}
 	answer := &prompts.Prompt{
 		Role:    prompts.RoleAssistant,
@@ -1041,7 +1042,7 @@ func TestProcessOutputMessages(t *testing.T) {
 		{Role: prompts.RoleAssistant, Type: prompts.TypeUnknown, ID: "unknown-item"},
 		answer,
 	}
-	renderer := &mock.Renderer{OnRender: func(prompts.Templates, prompts.Context) (prompts.Prompts, error) {
+	renderer := &mock.Renderer{OnRender: func(templates.Templates, prompts.Context) (prompts.Prompts, error) {
 		return prompts.Prompts{input}, nil
 	}}
 	inference := mockprovider.New(ulid.Make())
@@ -1057,7 +1058,7 @@ func TestProcessOutputMessages(t *testing.T) {
 		},
 		finalize: func(_ context.Context, output *task.Output, executionErr error) error {
 			require.NoError(t, executionErr)
-			require.Equal(t, prompts.Prompts{input, answer}, output.Messages)
+			require.Equal(t, prompts.Prompts{input, response.Output[0], response.Output[1], answer}, output.Messages)
 			return nil
 		},
 	}
@@ -1069,10 +1070,10 @@ func TestProcessOutputMessages(t *testing.T) {
 	// Execute the normal single-generation lifecycle, including Finalize.
 	output, err := runProcessTest(t, context.Background(), inference, host, &schema.Output{})
 
-	// Assert reasoning affects neither the final answer nor application history.
+	// The final answer remains assistant text while the full transcript is returned by default.
 	require.NoError(t, err)
 	require.Equal(t, "answer", output.Output)
-	require.Equal(t, prompts.Prompts{input, answer}, output.Messages)
+	require.Equal(t, prompts.Prompts{input, response.Output[0], response.Output[1], answer}, output.Messages)
 	require.Len(t, response.Output, 3)
 	require.Equal(t, prompts.TypeReasoning, response.Output[0].Type)
 	require.Equal(t, prompts.TypeUnknown, response.Output[1].Type)
@@ -1080,10 +1081,47 @@ func TestProcessOutputMessages(t *testing.T) {
 	// Filtering copies the slice, not the retained prompt objects. Replacing an
 	// application history entry must not replace the provider's response entry.
 	require.Same(t, input, output.Messages[0])
-	require.Same(t, answer, output.Messages[1])
-	output.Messages[1] = &prompts.Prompt{Content: "replacement"}
+	require.Same(t, answer, output.Messages[3])
+	output.Messages[3] = &prompts.Prompt{Content: "replacement"}
 	require.Same(t, answer, response.Output[2])
 	inference.AssertCalled(t, mockprovider.Generate, 1)
+}
+
+// TestProcessOutputMessageConfiguredFilters verifies configured type and role filters affect returned history.
+func TestProcessOutputMessageConfiguredFilters(t *testing.T) {
+	conf, err := config.Get()
+	require.NoError(t, err)
+	original := conf
+	t.Cleanup(func() { require.NoError(t, config.Set(original)) })
+	conf.FilterOutputMessageTypes = []prompts.Type{prompts.TypeRefusal}
+	conf.FilterOutputMessageRoles = []prompts.Role{prompts.RoleDeveloper}
+	require.NoError(t, config.Set(conf))
+
+	input := &prompts.Prompt{Role: prompts.RoleUser, Type: prompts.TypeMessage, Content: "question"}
+	answer := &prompts.Prompt{Role: prompts.RoleAssistant, Type: prompts.TypeMessage, Content: "answer"}
+	response := processTestResponse()
+	response.Output = prompts.Prompts{
+		answer,
+		{Role: prompts.RoleAssistant, Type: prompts.TypeRefusal},
+		{Role: prompts.RoleDeveloper, Type: prompts.TypeMessage, Content: "developer note"},
+	}
+	renderer := &mock.Renderer{OnRender: func(templates.Templates, prompts.Context) (prompts.Prompts, error) {
+		return prompts.Prompts{input}, nil
+	}}
+	inference := mockprovider.New(ulid.Make())
+	inference.OnGenerate = func(context.Context, *provider.Request) (*provider.Response, error) {
+		return response, nil
+	}
+	runner := &processTestRunner{}
+	host := struct {
+		*processTestRunner
+		*mock.Renderer
+	}{runner, renderer}
+
+	output, err := runProcessTest(t, context.Background(), inference, host, &schema.Output{})
+
+	require.NoError(t, err)
+	require.Equal(t, prompts.Prompts{input, answer}, output.Messages)
 }
 
 // Attachment preparation errors stop before inference, including cancellation

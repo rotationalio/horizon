@@ -2,8 +2,8 @@ package horizon
 
 import (
 	"context"
-
 	"fmt"
+	"log/slog"
 	stdhttp "net/http"
 	"time"
 
@@ -19,6 +19,8 @@ import (
 	"go.rtnl.ai/horizon/prompts"
 	"go.rtnl.ai/horizon/provider"
 	"go.rtnl.ai/horizon/task"
+
+	"go.rtnl.ai/x/rlog"
 )
 
 var tracer = otel.Tracer("go.rtnl.ai/horizon")
@@ -85,8 +87,20 @@ func (p *process) Run(ctx context.Context) (output *task.Output, err error) {
 	defer func() {
 		// Step 6: Finalize the runner after the execution path completes.
 		p.output.Finished = time.Now()
-		// TODO: Do we want to return reasoning/unknown messages?
-		p.output.Messages = p.messages.FilterOutTypes(prompts.TypeReasoning, prompts.TypeUnknown)
+		for _, message := range p.messages {
+			if message == nil {
+				continue
+			}
+			if !message.Type.IsKnown() {
+				rlog.WarnAttrs(ctx, "message has unknown prompt type", slog.Int("type", int(message.Type)))
+			}
+			if !message.Role.IsKnown() {
+				rlog.WarnAttrs(ctx, "message has unknown prompt role", slog.Int("role", int(message.Role)))
+			}
+		}
+		p.output.Messages = p.messages.
+			FilterOutTypes(p.config.FilterOutputMessageTypes...).
+			FilterOutRoles(p.config.FilterOutputMessageRoles...)
 		executionErr := err
 		executionOutcome := outcomeFor(executionErr)
 		p.output.Outcome = executionOutcome
@@ -224,15 +238,10 @@ func (p *process) ProcessAttachments(ctx context.Context) error {
 		}
 
 		// Only download the attachment data if it's not already cached.
-		copy := attachment.Clone()
-		if copy.Data == nil && copy.URL != "" {
-			data, err := copy.Bytes(ctx)
-			if err != nil {
-				return fmt.Errorf("download attachment %d: %w", i, err)
-			}
-			copy.Data = append([]byte{}, data...)
+		if err := attachment.Download(ctx); err != nil {
+			return fmt.Errorf("download attachment %d: %w", i, err)
 		}
-		p.request.Attachments = append(p.request.Attachments, copy)
+		p.request.Attachments = append(p.request.Attachments, attachment.Clone())
 	}
 	return nil
 }
@@ -242,7 +251,7 @@ func (p *process) Render(_ context.Context) (err error) {
 		p.request.Input, err = renderer.Render(p.task.Prompts, p.input.Context)
 	} else {
 		// Use the default renderer to render the prompts.
-		p.request.Input, err = prompts.Render(p.task.Prompts, p.input.Context)
+		p.request.Input, err = p.task.Prompts.Render(p.input.Context)
 	}
 	return err
 }

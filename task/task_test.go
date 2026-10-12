@@ -8,7 +8,7 @@ import (
 	"go.rtnl.ai/horizon/capabilities"
 	"go.rtnl.ai/horizon/modality"
 	"go.rtnl.ai/horizon/params"
-	"go.rtnl.ai/horizon/prompts"
+	"go.rtnl.ai/horizon/prompts/templates"
 	"go.rtnl.ai/horizon/provider"
 	"go.rtnl.ai/horizon/provider/auth"
 	"go.rtnl.ai/horizon/schema"
@@ -24,7 +24,7 @@ func TestTaskClone(t *testing.T) {
 			Model:        task.Model{Parameters: params.New(map[string]any{"temperature": 0.5})},
 			Input:        &schema.Input{Schema: &schema.Schema{Name: "input"}},
 			Output:       &schema.Output{Schema: &schema.Schema{Name: "output"}},
-			Prompts:      prompts.Templates{nil, {Content: "original"}},
+			Prompts:      templates.Templates{nil, {Content: "original"}},
 			Capabilities: []capabilities.Name{"original"},
 			Provider: &provider.Config{
 				DefaultModel: "original-model",
@@ -88,7 +88,7 @@ func TestTaskSerialization(t *testing.T) {
 						ID:      id,
 						Model:   task.Model{Slug: "model"},
 						Output:  &schema.Output{Modality: modality.Text},
-						Prompts: prompts.Templates{},
+						Prompts: templates.Templates{},
 					}
 					if selected {
 						original.Provider = &provider.Config{

@@ -31,10 +31,12 @@ func (p *process) Generate(ctx context.Context) (*provider.Response, error) {
 	}
 
 	// Perform generation inside its own span.
-	p.output.Usage.Invocations++
 	requestCtx, span := tracer.Start(ctx, "provider.generate")
 	span.SetAttributes(attribute.String("provider.model", p.request.Model))
+
+	p.output.Usage.Invocations++
 	response, generateErr := p.provider.Generate(requestCtx, p.request)
+
 	responseAttributes := []attribute.KeyValue{attribute.Bool("provider.response_present", response != nil)}
 	if response != nil {
 		responseAttributes = append(responseAttributes,

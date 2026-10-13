@@ -1,17 +1,6 @@
 package prompts
 
-import "go.rtnl.ai/horizon/render"
-
-// A collection of [Template]s.
-type Templates []*Template
-
-// A prompt template that can be rendered into a [Prompt] via a [Context] and a [Renderer].
-type Template struct {
-	Index    uint        `json:"index" yaml:"index" msg:"index"`          // The index of the template in the list of templates
-	Role     Role        `json:"role" yaml:"role" msg:"role"`             // The role of the template
-	Content  string      `json:"content" yaml:"content" msg:"content"`    // The content of the template
-	Renderer render.Type `json:"renderer" yaml:"renderer" msg:"renderer"` // The renderer type to use for the template
-}
+import "slices"
 
 // A collection of [Prompt]s.
 type Prompts []*Prompt
@@ -32,6 +21,75 @@ type Prompt struct {
 	ToolResults []ToolResponse `json:"tool_results,omitempty"` // Results associated with prior tool calls.
 }
 
+// Clone returns an independent copy of the prompt's mutable fields. JSON-like
+// values in Meta are recursively copied; opaque metadata values remain shared.
+func (p *Prompt) Clone() *Prompt {
+	if p == nil {
+		return nil
+	}
+
+	cloned := *p
+	cloned.Citations = slices.Clone(p.Citations)
+	cloned.ToolCalls = slices.Clone(p.ToolCalls)
+	cloned.ToolResults = slices.Clone(p.ToolResults)
+
+	// Recursively clone the Meta map, preserving nil entries and order.
+	// Stdlib maps.Clone will only clone the map's keys and values, not the
+	// values themselves.
+	if p.Meta != nil {
+		cloned.Meta = make(map[string]any, len(p.Meta))
+		for key, value := range p.Meta {
+			cloned.Meta[key] = cloneMetaValue(value)
+		}
+	}
+	return &cloned
+}
+
+// Clone returns an independent copy of each prompt, preserving nil entries and order.
+func (p Prompts) Clone() Prompts {
+	if p == nil {
+		return nil
+	}
+
+	cloned := make(Prompts, len(p))
+	for i, prompt := range p {
+		cloned[i] = prompt.Clone()
+	}
+	return cloned
+}
+
+// cloneMetaValue recursively copies JSON-like metadata containers. Values
+// that are not map or slice types are returned as-is.
+func cloneMetaValue(value any) any {
+	switch value := value.(type) {
+	case map[string]any:
+		cloned := make(map[string]any, len(value))
+		for key, nested := range value {
+			cloned[key] = cloneMetaValue(nested)
+		}
+		return cloned
+	case []any:
+		cloned := make([]any, len(value))
+		for i, nested := range value {
+			cloned[i] = cloneMetaValue(nested)
+		}
+		return cloned
+	case []string:
+		return slices.Clone(value)
+	case []byte:
+		return slices.Clone(value)
+	default:
+		return value
+	}
+}
+
+type Citation struct {
+	StartIndex int64
+	EndIndex   int64
+	Title      string
+	URL        string
+}
+
 // ToolCall is a provider-neutral function call in the inference transcript.
 type ToolCall struct {
 	CallID    string `json:"call_id"`
@@ -46,35 +104,6 @@ type ToolResponse struct {
 	// TODO: support more than just textual string content here, such as files and binary data.
 }
 
-type Citation struct {
-	StartIndex int64
-	EndIndex   int64
-	Title      string
-	URL        string
-}
-
-// Identifies the kind of content represented by a prompt.
-type Type string
-
-// Standard prompt content types used by providers when normalizing responses.
-const (
-	TypeUnknown       Type = "unknown"
-	TypeMessage       Type = "message"
-	TypeToolCall      Type = "tool_call"
-	TypeRefusal       Type = "refusal"
-	TypeContentFilter Type = "content_filter"
-)
-
-// Returns true if the templates are sorted by index, otherwise returns false.
-func (t Templates) IsSorted() bool {
-	for i := range t {
-		if i > 0 && t[i].Index < t[i-1].Index {
-			return false
-		}
-	}
-	return true
-}
-
 // Returns true if the prompts are sorted by index, otherwise returns false.
 func (p Prompts) IsSorted() bool {
 	for i := range p {
@@ -83,4 +112,34 @@ func (p Prompts) IsSorted() bool {
 		}
 	}
 	return true
+}
+
+// FilterOutTypes returns a new slice with the given [Type]s removed, preserving
+// order and nil entries. The retained prompts themselves are not copied.
+func (p Prompts) FilterOutTypes(types ...Type) Prompts {
+	if p == nil {
+		return nil
+	}
+	out := make(Prompts, 0, len(p))
+	for _, prompt := range p {
+		if prompt == nil || !slices.Contains(types, prompt.Type) {
+			out = append(out, prompt)
+		}
+	}
+	return out
+}
+
+// FilterOutRoles returns a new slice with the given [Role]s removed, preserving
+// order and nil entries. The retained prompts themselves are not copied.
+func (p Prompts) FilterOutRoles(roles ...Role) Prompts {
+	if p == nil {
+		return nil
+	}
+	out := make(Prompts, 0, len(p))
+	for _, prompt := range p {
+		if prompt == nil || !slices.Contains(roles, prompt.Role) {
+			out = append(out, prompt)
+		}
+	}
+	return out
 }

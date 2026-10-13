@@ -5,7 +5,7 @@ import (
 
 	"go.rtnl.ai/horizon/capabilities"
 	"go.rtnl.ai/horizon/params"
-	"go.rtnl.ai/horizon/prompts"
+	"go.rtnl.ai/horizon/prompts/templates"
 	"go.rtnl.ai/horizon/provider"
 	"go.rtnl.ai/horizon/schema"
 	"go.rtnl.ai/ulid"
@@ -31,7 +31,7 @@ type Task struct {
 	Input        *schema.Input       `json:"input,omitempty" yaml:"input,omitempty" msg:"input,omitempty"`                      // The input schema of the task
 	Output       *schema.Output      `json:"output" yaml:"output" msg:"output"`                                                 // The output type of the task
 	Model        Model               `json:"model" yaml:"model" msg:"model"`                                                    // The Model used for the task
-	Prompts      prompts.Templates   `json:"prompts" yaml:"prompts" msg:"prompts"`                                              // The prompts used for the task
+	Prompts      templates.Templates `json:"prompts" yaml:"prompts" msg:"prompts"`                                              // The prompts used for the task
 	Capabilities []capabilities.Name `json:"capabilities,omitempty" yaml:"capabilities,omitempty" msg:"capabilities,omitempty"` // The capabilities enabled for the task
 
 	// Task Execution Configuration
@@ -74,7 +74,7 @@ func (t *Task) Clone() *Task {
 		}
 	}
 	if t.Prompts != nil {
-		cloned.Prompts = make(prompts.Templates, len(t.Prompts))
+		cloned.Prompts = make(templates.Templates, len(t.Prompts))
 		for i, template := range t.Prompts {
 			if template != nil {
 				copy := *template

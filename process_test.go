@@ -4,15 +4,19 @@ import (
 	"context"
 	"encoding/json"
 	"fmt"
+	"net/http"
+	"net/http/httptest"
 	"testing"
 
 	"github.com/stretchr/testify/require"
 
 	"go.rtnl.ai/horizon"
 	"go.rtnl.ai/horizon/attachments"
+	"go.rtnl.ai/horizon/config"
 	"go.rtnl.ai/horizon/errors"
 	"go.rtnl.ai/horizon/params"
 	"go.rtnl.ai/horizon/prompts"
+	"go.rtnl.ai/horizon/prompts/templates"
 	"go.rtnl.ai/horizon/provider"
 	mockprovider "go.rtnl.ai/horizon/provider/mock"
 	"go.rtnl.ai/horizon/schema"
@@ -361,6 +365,22 @@ func TestProcessRunCaptureResponse(t *testing.T) {
 			wantMIME: mime.TextPlain,
 		},
 		{
+			name: "reasoning is not final output",
+			messages: prompts.Prompts{
+				{Role: prompts.RoleAssistant, Type: prompts.TypeReasoning, Content: "private reasoning"},
+				{Role: prompts.RoleAssistant, Type: prompts.TypeMessage, Content: "answer"},
+			},
+			want:     "answer",
+			wantMIME: mime.TextPlain,
+		},
+		{
+			name: "reasoning alone is not final output",
+			messages: prompts.Prompts{
+				{Role: prompts.RoleAssistant, Type: prompts.TypeReasoning, Content: "private reasoning"},
+			},
+			wantErr: errors.ErrNoModelOutput,
+		},
+		{
 			name: "empty final answer uses fallback",
 			messages: prompts.Prompts{
 				{
@@ -516,6 +536,7 @@ func TestProcessRunCaptureResponse(t *testing.T) {
 	for _, tt := range tests {
 		t.Run(tt.name, func(t *testing.T) {
 			// Setup: return the case's response from a mock provider; use real response processing.
+			wantMessages := append(prompts.Prompts{}, tt.messages...)
 			response := processTestResponse()
 			response.Model = tt.model
 			response.Output = tt.messages
@@ -541,6 +562,7 @@ func TestProcessRunCaptureResponse(t *testing.T) {
 						require.NoError(t, executionErr)
 					}
 					require.Equal(t, tt.want, output.Output)
+					require.Equal(t, wantMessages, output.Messages)
 					return nil
 				},
 			}
@@ -556,6 +578,9 @@ func TestProcessRunCaptureResponse(t *testing.T) {
 				require.NoError(t, err)
 				require.Equal(t, task.OutcomeSucceeded, output.Outcome)
 			}
+
+			// History is independent of final-answer decoding and retains every unfiltered message.
+			require.Equal(t, wantMessages, output.Messages)
 
 			// Every case checks content, MIME type, and attachments, including empty results.
 			require.Equal(t, tt.want, output.Output)
@@ -776,9 +801,12 @@ func TestProcessRunGenerationFailures(t *testing.T) {
 				require.Zero(t, output.Usage.APICost)
 			}
 
-			// Rejected or cancelled responses must not expose their private attachments.
+			// Rejected or cancelled responses must not expose content through attachments or history.
 			if tt.guardErr != nil || tt.cancelProvider || tt.cancelGuard || !tt.response {
 				require.Empty(t, output.Attachments)
+				require.Empty(t, output.Messages)
+			} else {
+				require.Len(t, output.Messages, 1)
 			}
 
 			// Skip the output guard when no response arrives or the provider cancels execution.
@@ -795,23 +823,16 @@ func TestProcessRunGenerationFailures(t *testing.T) {
 }
 
 // Checks the allow path with neither guard, either guard alone, or both guards.
-// Unlike the rejection tests, this verifies that each optional interface is detected
-// independently and that returning nil allows execution to continue. Mutations make
-// the ordering observable: input changes reach inference, and output changes reach
-// the caller (as they would for redaction).
+// Input-guard mutations are isolated from inference; output-guard edits remain visible.
 func TestProcessRunOptionalGuards(t *testing.T) {
 	for _, guards := range []string{"none", "input only", "output only", "both"} {
 		t.Run(guards, func(t *testing.T) {
-			// Setup: the provider mutates the request so that we can see that
-			// nil-returning guards ran.
+			// Setup: run each guard combination with a request marker and final response.
+			// The input guard edits only its validation copy; the output guard redacts text.
 			inference := mockprovider.New(ulid.Make())
 			inference.OnGenerate = func(_ context.Context, request *provider.Request) (*provider.Response, error) {
-				// Input-guard changes must reach the provider, not just the runner's local state.
-				if guards == "input only" || guards == "both" {
-					require.Equal(t, "guarded-model", request.Model)
-				} else {
-					require.Equal(t, "requested-model", request.Model)
-				}
+				// Input-guard changes are intentionally absent from the provider request.
+				require.Equal(t, "requested-model", request.Model)
 				return processTestResponse(), nil
 			}
 
@@ -1006,6 +1027,193 @@ func TestProcessConcurrentIsolation(t *testing.T) {
 	require.Same(t, &config, original.Provider)
 }
 
+// TestProcessOutputMessages verifies returned history retains reasoning and unknown types by default.
+func TestProcessOutputMessages(t *testing.T) {
+	// Setup: return reasoning, an unknown type, and a final answer in one response.
+	input := &prompts.Prompt{Role: prompts.RoleUser, Type: prompts.TypeMessage, Content: "question"}
+	answer := &prompts.Prompt{
+		Role:    prompts.RoleAssistant,
+		Type:    prompts.TypeMessage,
+		Content: "answer",
+	}
+	response := processTestResponse()
+	response.Output = prompts.Prompts{
+		{Role: prompts.RoleAssistant, Type: prompts.TypeReasoning, Content: "private reasoning"},
+		{Role: prompts.RoleAssistant, Type: prompts.TypeUnknown, ID: "unknown-item"},
+		answer,
+	}
+	renderer := &mock.Renderer{OnRender: func(templates.Templates, prompts.Context) (prompts.Prompts, error) {
+		return prompts.Prompts{input}, nil
+	}}
+	inference := mockprovider.New(ulid.Make())
+	inference.OnGenerate = func(_ context.Context, request *provider.Request) (*provider.Response, error) {
+		require.Equal(t, prompts.Prompts{input}, request.Input)
+		return response, nil
+	}
+	runner := &processTestRunner{
+		protectInput: func(request *provider.Request) error {
+			require.Equal(t, "question", request.Input[0].Content)
+			request.Input[0].Content = "guard mutation"
+			return nil
+		},
+		finalize: func(_ context.Context, output *task.Output, executionErr error) error {
+			require.NoError(t, executionErr)
+			require.Equal(t, prompts.Prompts{input, response.Output[0], response.Output[1], answer}, output.Messages)
+			return nil
+		},
+	}
+	host := struct {
+		*processTestRunner
+		*mock.Renderer
+	}{runner, renderer}
+
+	// Execute the normal single-generation lifecycle, including Finalize.
+	output, err := runProcessTest(t, context.Background(), inference, host, &schema.Output{})
+
+	// The final answer remains assistant text while the full transcript is returned by default.
+	require.NoError(t, err)
+	require.Equal(t, "answer", output.Output)
+	require.Equal(t, prompts.Prompts{input, response.Output[0], response.Output[1], answer}, output.Messages)
+	require.Len(t, response.Output, 3)
+	require.Equal(t, prompts.TypeReasoning, response.Output[0].Type)
+	require.Equal(t, prompts.TypeUnknown, response.Output[1].Type)
+
+	// Filtering copies the slice, not the retained prompt objects. Replacing an
+	// application history entry must not replace the provider's response entry.
+	require.Same(t, input, output.Messages[0])
+	require.Same(t, answer, output.Messages[3])
+	output.Messages[3] = &prompts.Prompt{Content: "replacement"}
+	require.Same(t, answer, response.Output[2])
+	inference.AssertCalled(t, mockprovider.Generate, 1)
+}
+
+// TestProcessOutputMessageConfiguredFilters verifies configured type and role filters affect returned history.
+func TestProcessOutputMessageConfiguredFilters(t *testing.T) {
+	conf, err := config.Get()
+	require.NoError(t, err)
+	original := conf
+	t.Cleanup(func() { require.NoError(t, config.Set(original)) })
+	conf.FilterOutputMessageTypes = []prompts.Type{prompts.TypeRefusal}
+	conf.FilterOutputMessageRoles = []prompts.Role{prompts.RoleDeveloper}
+	require.NoError(t, config.Set(conf))
+
+	input := &prompts.Prompt{Role: prompts.RoleUser, Type: prompts.TypeMessage, Content: "question"}
+	answer := &prompts.Prompt{Role: prompts.RoleAssistant, Type: prompts.TypeMessage, Content: "answer"}
+	response := processTestResponse()
+	response.Output = prompts.Prompts{
+		answer,
+		{Role: prompts.RoleAssistant, Type: prompts.TypeRefusal},
+		{Role: prompts.RoleDeveloper, Type: prompts.TypeMessage, Content: "developer note"},
+	}
+	renderer := &mock.Renderer{OnRender: func(templates.Templates, prompts.Context) (prompts.Prompts, error) {
+		return prompts.Prompts{input}, nil
+	}}
+	inference := mockprovider.New(ulid.Make())
+	inference.OnGenerate = func(context.Context, *provider.Request) (*provider.Response, error) {
+		return response, nil
+	}
+	runner := &processTestRunner{}
+	host := struct {
+		*processTestRunner
+		*mock.Renderer
+	}{runner, renderer}
+
+	output, err := runProcessTest(t, context.Background(), inference, host, &schema.Output{})
+
+	require.NoError(t, err)
+	require.Equal(t, prompts.Prompts{input, answer}, output.Messages)
+}
+
+// Attachment preparation errors stop before inference, including cancellation
+// between files and processors returning unusable data.
+func TestProcessAttachmentFailures(t *testing.T) {
+	processorErr := errors.New("attachment processor failed")
+	tests := []struct {
+		name            string
+		files           attachments.Attachments
+		processorError  bool
+		processorNil    bool
+		cancelProcessor bool
+		downloadFailure bool
+		want            error
+	}{
+		{
+			name:  "nil attachment",
+			files: attachments.Attachments{nil},
+			want:  errors.ErrNilAttachment,
+		},
+		{
+			name:           "processor failure",
+			processorError: true,
+			want:           processorErr,
+		},
+		{
+			name:         "processor returns nil",
+			processorNil: true,
+			want:         errors.ErrNilAttachment,
+		},
+		{
+			name:            "cancellation between attachments",
+			cancelProcessor: true,
+			want:            context.Canceled,
+		},
+		{
+			name:            "download failure",
+			downloadFailure: true,
+		},
+	}
+	for _, tt := range tests {
+		t.Run(tt.name, func(t *testing.T) {
+			// Setup: local failures and cancellation, with no external HTTP requests.
+			ctx, cancel := context.WithCancel(context.Background())
+			defer cancel()
+			files := tt.files
+			if files == nil {
+				files = attachments.Attachments{{Filename: "file.txt", Data: []byte("data")}}
+			}
+			if tt.cancelProcessor {
+				files = append(files, &attachments.Attachment{Filename: "second.txt", Data: []byte("data")})
+			}
+			if tt.downloadFailure {
+				server := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, _ *http.Request) { w.WriteHeader(http.StatusBadGateway) }))
+				defer server.Close()
+				files = attachments.Attachments{{URL: server.URL}}
+			}
+			lifecycle := noopRunner()
+			var runner task.Runner = lifecycle
+			if tt.processorError || tt.processorNil || tt.cancelProcessor {
+				processor := &mock.AttachmentProcessor{OnProcessAttachment: func(file *attachments.Attachment) (*attachments.Attachment, error) {
+					if tt.processorError {
+						return nil, processorErr
+					}
+					if tt.processorNil {
+						return nil, nil
+					}
+					cancel()
+					return file, nil
+				}}
+				runner = struct {
+					*mock.Runner
+					*mock.AttachmentProcessor
+				}{lifecycle, processor}
+			}
+			inference := mockprovider.New(ulid.Make())
+
+			// Execute preparation and cleanup without reaching generation.
+			output, err := runProcessTest(t, ctx, inference, runner, &schema.Output{}, &task.Input{Attachments: files})
+
+			// Assert the failure and absence of provider calls; Finalize still runs once.
+			require.Error(t, err)
+			if tt.want != nil {
+				require.ErrorIs(t, err, tt.want)
+			}
+			require.Zero(t, output.Usage.Invocations)
+			inference.AssertNotCalled(t, mockprovider.Generate)
+			lifecycle.AssertCalled(t, mock.Finalize, 1)
+		})
+	}
+}
+
 // Holds configurable host hooks for exercising one execution lifecycle.
 type processTestRunner struct {
 	events        []string
@@ -1053,14 +1261,19 @@ func (r *processTestRunner) ProtectOutput(response *provider.Response) error {
 	return nil
 }
 
-func runProcessTest(t *testing.T, ctx context.Context, inference provider.Provider, runner task.Runner, output *schema.Output) (*task.Output, error) {
+// Runs an execution with a cached mock provider and optional application input.
+func runProcessTest(t *testing.T, ctx context.Context, inference provider.Provider, runner task.Runner, output *schema.Output, inputs ...*task.Input) (*task.Output, error) {
 	t.Helper()
 	config := testProviderConfig()
 	config.ID = inference.ID()
 	h := newTestHorizon(t, testFactory(func(context.Context) (task.Runner, error) { return runner, nil }))
 	_, err := h.GetOrCreateProvider(config, inference)
 	require.NoError(t, err)
-	return h.Run(ctx, &task.Input{}, &task.Task{
+	input := &task.Input{}
+	if len(inputs) > 0 {
+		input = inputs[0]
+	}
+	return h.Run(ctx, input, &task.Task{
 		Provider: &config,
 		Model:    task.Model{Slug: "requested-model"},
 		Output:   output,

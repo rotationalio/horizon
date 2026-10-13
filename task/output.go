@@ -6,6 +6,7 @@ import (
 	"go.rtnl.ai/horizon/attachments"
 	"go.rtnl.ai/horizon/capabilities"
 	"go.rtnl.ai/horizon/http"
+	"go.rtnl.ai/horizon/prompts"
 	"go.rtnl.ai/x/mime"
 )
 
@@ -21,7 +22,8 @@ const (
 type Output struct {
 	Usage        Usage               `json:"usage"`
 	Model        Model               `json:"model"`
-	Output       any                 `json:"output,omitempty"` // Final or partial model output; Run may return it with an error.
+	Output       any                 `json:"output,omitempty"`   // Final or partial model output; Run may return it with an error.
+	Messages     prompts.Prompts     `json:"messages,omitempty"` // Ordered conversation history, excluding reasoning and unknown types.
 	MimeType     mime.Type           `json:"mime_type"`
 	Capabilities []capabilities.Name `json:"capabilities"`
 	Actions      Actions             `json:"actions,omitempty"`

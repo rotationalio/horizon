@@ -22,6 +22,15 @@ type Schema struct {
 	Data        string         `json:"data,omitempty" yaml:"data,omitempty" msg:"data,omitempty"`                      // The schema definition (usually JSON)
 }
 
+// Clone returns an independent copy of the schema. A nil receiver returns nil.
+func (s *Schema) Clone() *Schema {
+	if s == nil {
+		return nil
+	}
+	cloned := *s
+	return &cloned
+}
+
 // TODO: Add support for schema validation directly in the Horizon package.
 func Validate(data any) error {
 	return nil
@@ -52,6 +61,32 @@ func (s *Schema) JSON() (_ any, err error) {
 
 	// TODO: return a resolved and validated JSON schema object from jsonschema-go
 	return json.RawMessage(s.Data), nil
+}
+
+// Object returns the schema as a map. A nil schema describes an object
+// with no declared properties, which is useful for tools without parameters.
+func (s *Schema) Object() (map[string]any, error) {
+	if s == nil {
+		return map[string]any{"type": "object"}, nil
+	}
+
+	value, err := s.JSON()
+	if err != nil {
+		return nil, err
+	}
+	raw, ok := value.(json.RawMessage)
+	if !ok {
+		return nil, errors.ErrInvalidJSONSchema
+	}
+
+	var object map[string]any
+	if err := json.Unmarshal(raw, &object); err != nil {
+		return nil, err
+	}
+	if object == nil {
+		return nil, errors.ErrInvalidJSONSchema
+	}
+	return object, nil
 }
 
 // Defines an input interface including the modalities, context type, and any schema

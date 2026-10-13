@@ -27,7 +27,7 @@ func TestMaxToolTurnsConfiguration(t *testing.T) {
 		conf, err := config.New()
 
 		require.NoError(t, err)
-		require.Equal(t, int64(32), conf.MaxToolTurns)
+		require.Equal(t, uint16(32), conf.MaxToolTurns)
 	})
 
 	t.Run("explicit zero disables tools", func(t *testing.T) {
@@ -37,6 +37,12 @@ func TestMaxToolTurnsConfiguration(t *testing.T) {
 
 		require.NoError(t, err)
 		require.Zero(t, conf.MaxToolTurns)
+	})
+
+	t.Run("values above uint16 range fail during parsing", func(t *testing.T) {
+		require.NoError(t, os.Setenv(key, "65536"))
+		_, err := config.New()
+		require.EqualError(t, err, "confire: could not parse MaxToolTurns from HORIZON_MAX_TOOL_TURNS: converting \"65536\" to type uint16: strconv.ParseUint: parsing \"65536\": value out of range")
 	})
 }
 

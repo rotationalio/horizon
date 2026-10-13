@@ -1,10 +1,11 @@
 # Horizon
 
-**License:** [BSD 3-Clause](LICENSE)
 [![CI Tests](https://github.com/rotationalio/horizon/actions/workflows/tests.yaml/badge.svg?branch=main)](https://github.com/rotationalio/horizon/actions/workflows/tests.yaml)
 [![Go Reference](https://pkg.go.dev/badge/go.rtnl.ai/horizon.svg)](https://pkg.go.dev/go.rtnl.ai/horizon)
 
 Horizon decouples AI providers from AI execution and provides a single inference API.
+
+**License:** [BSD 3-Clause](LICENSE)
 
 ## Install
 

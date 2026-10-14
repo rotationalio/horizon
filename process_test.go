@@ -562,7 +562,7 @@ func TestProcessRunCaptureResponse(t *testing.T) {
 						require.NoError(t, executionErr)
 					}
 					require.Equal(t, tt.want, output.Output)
-					require.Equal(t, wantMessages, output.Messages)
+					require.Equal(t, wantMessages, output.Messages())
 					return nil
 				},
 			}
@@ -580,7 +580,7 @@ func TestProcessRunCaptureResponse(t *testing.T) {
 			}
 
 			// History is independent of final-answer decoding and retains every unfiltered message.
-			require.Equal(t, wantMessages, output.Messages)
+			require.Equal(t, wantMessages, output.Messages())
 
 			// Every case checks content, MIME type, and attachments, including empty results.
 			require.Equal(t, tt.want, output.Output)
@@ -804,9 +804,9 @@ func TestProcessRunGenerationFailures(t *testing.T) {
 			// Rejected or cancelled responses must not expose content through attachments or history.
 			if tt.guardErr != nil || tt.cancelProvider || tt.cancelGuard || !tt.response {
 				require.Empty(t, output.Attachments)
-				require.Empty(t, output.Messages)
+				require.Empty(t, output.Messages())
 			} else {
-				require.Len(t, output.Messages, 1)
+				require.Len(t, output.Messages(), 1)
 			}
 
 			// Skip the output guard when no response arrives or the provider cancels execution.
@@ -1058,7 +1058,7 @@ func TestProcessOutputMessages(t *testing.T) {
 		},
 		finalize: func(_ context.Context, output *task.Output, executionErr error) error {
 			require.NoError(t, executionErr)
-			require.Equal(t, prompts.Prompts{input, response.Output[0], response.Output[1], answer}, output.Messages)
+			require.Equal(t, prompts.Prompts{input, response.Output[0], response.Output[1], answer}, output.Messages())
 			return nil
 		},
 	}
@@ -1073,16 +1073,16 @@ func TestProcessOutputMessages(t *testing.T) {
 	// The final answer remains assistant text while the full transcript is returned by default.
 	require.NoError(t, err)
 	require.Equal(t, "answer", output.Output)
-	require.Equal(t, prompts.Prompts{input, response.Output[0], response.Output[1], answer}, output.Messages)
+	require.Equal(t, prompts.Prompts{input, response.Output[0], response.Output[1], answer}, output.Messages())
 	require.Len(t, response.Output, 3)
 	require.Equal(t, prompts.TypeReasoning, response.Output[0].Type)
 	require.Equal(t, prompts.TypeUnknown, response.Output[1].Type)
 
 	// Filtering copies the slice, not the retained prompt objects. Replacing an
 	// application history entry must not replace the provider's response entry.
-	require.Same(t, input, output.Messages[0])
-	require.Same(t, answer, output.Messages[3])
-	output.Messages[3] = &prompts.Prompt{Content: "replacement"}
+	require.Same(t, input, output.Messages()[0])
+	require.Same(t, answer, output.Messages()[3])
+	output.Messages()[3] = &prompts.Prompt{Content: "replacement"}
 	require.Same(t, answer, response.Output[2])
 	inference.AssertCalled(t, mockprovider.Generate, 1)
 }
@@ -1121,7 +1121,7 @@ func TestProcessOutputMessageConfiguredFilters(t *testing.T) {
 	output, err := runProcessTest(t, context.Background(), inference, host, &schema.Output{})
 
 	require.NoError(t, err)
-	require.Equal(t, prompts.Prompts{input, answer}, output.Messages)
+	require.Equal(t, prompts.Prompts{input, answer}, output.Messages())
 }
 
 // Attachment preparation errors stop before inference, including cancellation

@@ -126,7 +126,7 @@ func TestCapabilitiesConversation(t *testing.T) {
 		require.NoError(t, ctx.Err())
 		require.NoError(t, executionErr)
 		require.Equal(t, "guarded final answer", output.Output)
-		require.Len(t, output.Messages, 8, "requires all messages to pass through filtering")
+		require.Len(t, output.Messages(), 8, "requires all messages to pass through filtering")
 		return nil
 	}
 
@@ -299,8 +299,8 @@ func TestCapabilitiesModelDirectedRetry(t *testing.T) {
 	require.NoError(t, err)
 	require.Equal(t, "answer", output.Output)
 	require.Equal(t, []string{"first", "corrected"}, calls)
-	require.Len(t, output.Messages, 5)
-	require.NotContains(t, output.Messages[1].ToolResults[0].Content, cause.Error())
+	require.Len(t, output.Messages(), 5)
+	require.NotContains(t, output.Messages()[1].ToolResults[0].Content, cause.Error())
 	require.Equal(t, uint64(2), output.Usage.ToolCalls)
 }
 
@@ -409,7 +409,7 @@ func TestCapabilitiesConcurrentIsolation(t *testing.T) {
 		require.NoError(t, got.err)
 		require.Equal(t, got.id, got.output.Output)
 		require.Equal(t, []capabilities.Name{capabilities.Name("lookup_" + got.id)}, got.output.Capabilities)
-		require.Equal(t, got.id, got.output.Messages[0].Content)
+		require.Equal(t, got.id, got.output.Messages()[0].Content)
 		require.Equal(t, uint64(2), got.output.Usage.Invocations)
 		require.Equal(t, uint64(1), got.output.Usage.ToolCalls)
 	}
@@ -475,14 +475,14 @@ func TestCapabilitiesExistingHistory(t *testing.T) {
 			if reuseID {
 				require.ErrorIs(t, err, capabilities.ErrInvalidToolPrompt)
 				require.Empty(t, dispatched, "the valid first call must not run before whole-batch validation")
-				require.Len(t, output.Messages, 5)
+				require.Len(t, output.Messages(), 5)
 			} else {
 				require.NoError(t, err)
 				require.Equal(t, []string{"new-1", "new-2"}, dispatched)
-				require.Len(t, output.Messages, 8)
+				require.Len(t, output.Messages(), 8)
 			}
 			require.Len(t, history, 3)
-			require.Equal(t, "historical result", output.Messages[2].ToolResults[0].Content)
+			require.Equal(t, "historical result", output.Messages()[2].ToolResults[0].Content)
 		})
 	}
 }

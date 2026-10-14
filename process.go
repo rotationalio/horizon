@@ -98,9 +98,7 @@ func (p *process) Run(ctx context.Context) (output *task.Output, err error) {
 				rlog.WarnAttrs(ctx, "message has unknown prompt role", slog.Int("role", int(message.Role)))
 			}
 		}
-		p.output.Messages = p.messages.
-			FilterOutTypes(p.config.FilterOutputMessageTypes...).
-			FilterOutRoles(p.config.FilterOutputMessageRoles...)
+
 		executionErr := err
 		executionOutcome := outcomeFor(executionErr)
 		p.output.Outcome = executionOutcome

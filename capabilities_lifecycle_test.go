@@ -390,7 +390,7 @@ func TestCapabilitiesCancellationBetweenCalls(t *testing.T) {
 			// Assert cancellation stops the batch before the result or another call is added.
 			require.ErrorIs(t, err, context.Canceled)
 			require.Equal(t, task.OutcomeCancelled, output.Outcome)
-			require.Len(t, output.Messages, 1)
+			require.Len(t, output.Messages(), 1)
 			runner.CapabilityRunner.AssertCalled(t, mock.ExecuteCapability, 1)
 			inference.AssertCalled(t, mockprovider.Generate, 1)
 		})
@@ -576,7 +576,7 @@ func TestCapabilitiesLaterTurnFailures(t *testing.T) {
 			// case also fails cleanup itself, after generation has already succeeded.
 			runner.Runner.OnFinalize = func(finalizeCtx context.Context, output *task.Output, executionErr error) error {
 				require.NoError(t, finalizeCtx.Err(), "cleanup remains usable after cancellation")
-				require.Len(t, output.Messages, tt.wantMessages)
+				require.Len(t, output.Messages(), tt.wantMessages)
 				if tt.name == "finalize fails after answer" {
 					require.NoError(t, executionErr)
 					return finalizeErr
@@ -603,10 +603,10 @@ func TestCapabilitiesLaterTurnFailures(t *testing.T) {
 			require.Equal(t, uint64(1), output.Usage.ToolCalls)
 			require.Equal(t, tt.wantTokens, output.Usage.TotalTokens)
 			require.Equal(t, float64(tt.wantTokens/18)*0.25, output.Usage.APICost)
-			require.Len(t, output.Messages, tt.wantMessages)
+			require.Len(t, output.Messages(), tt.wantMessages)
 			require.Len(t, output.Attachments, tt.wantFiles)
 			require.Equal(t, "first.txt", output.Attachments[0].Filename)
-			require.Equal(t, "first", output.Messages[1].ToolResults[0].CallID)
+			require.Equal(t, "first", output.Messages()[1].ToolResults[0].CallID)
 			runner.CapabilityRunner.AssertCalled(t, mock.ExecuteCapability, 1)
 			runner.CapabilityRunner.AssertCalled(t, mock.LookupCapabilities, 1)
 			runner.Runner.AssertCalled(t, mock.Finalize, 1)
@@ -719,7 +719,7 @@ func TestCapabilitiesBudgetBoundaries(t *testing.T) {
 				require.Equal(t, "answer", output.Output)
 			}
 			require.Equal(t, uint64(tt.wantCalls), output.Usage.ToolCalls)
-			require.Len(t, output.Messages, tt.wantMessages)
+			require.Len(t, output.Messages(), tt.wantMessages)
 			runner.CapabilityRunner.AssertCalled(t, mock.ExecuteCapability, tt.wantCalls)
 			if tt.override != nil {
 				value, exists, err := output.Model.Parameters.MaxToolTurns()
@@ -863,11 +863,11 @@ func TestCapabilitiesMixedBatchOutcomes(t *testing.T) {
 				}
 				require.Nil(t, output.Output)
 				require.Equal(t, 1, turn)
-				require.Equal(t, "completed first", output.Messages[1].ToolResults[0].Content)
+				require.Equal(t, "completed first", output.Messages()[1].ToolResults[0].Content)
 			}
 			require.Equal(t, tt.wantCalls, dispatched)
 			require.Equal(t, uint64(len(tt.wantCalls)), output.Usage.ToolCalls)
-			require.Len(t, output.Messages, tt.wantMessages)
+			require.Len(t, output.Messages(), tt.wantMessages)
 			runner.Runner.AssertCalled(t, mock.Finalize, 1)
 		})
 	}

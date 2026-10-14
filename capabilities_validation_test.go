@@ -486,12 +486,12 @@ func TestCapabilitiesExecutorOutcomes(t *testing.T) {
 					require.ErrorIs(t, err, cause)
 				}
 				require.Nil(t, output.Output)
-				require.Len(t, output.Messages, 1)
+				require.Len(t, output.Messages(), 1)
 				require.Equal(t, 1, turn)
 			} else {
 				require.NoError(t, err)
 				require.Equal(t, "answer", output.Output)
-				require.Len(t, output.Messages, 3)
+				require.Len(t, output.Messages(), 3)
 				require.Equal(t, 2, turn, "recoverable outcomes should allow another model turn")
 			}
 			require.Equal(t, uint64(1), output.Usage.ToolCalls)

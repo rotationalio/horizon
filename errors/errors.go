@@ -45,7 +45,8 @@ var (
 	ErrUnsupportedMessageRole    = errors.New("unsupported message role")
 
 	// Attachment errors
-	ErrNilAttachment = errors.New("attachment is nil")
+	ErrNilAttachment  = errors.New("attachment is nil")
+	ErrInvalidDataURI = errors.New("invalid data URI")
 
 	// Schema-related errors
 	ErrInvalidJSONSchema               = errors.New("JSON schema must be an object")

@@ -527,6 +527,26 @@ func TestResponsesIntegration(t *testing.T) {
 		require.NoError(t, err)
 		require.Contains(t, topic["topic"], "Bitcoin")
 	})
+
+	t.Run("ImageOutput", func(t *testing.T) {
+		ctx, cancel := context.WithTimeout(context.Background(), testenv.LiveRequestTimeout)
+		defer cancel()
+
+		req := &provider.Request{
+			Input: prompts.Prompts{
+				{Role: prompts.RoleDeveloper, Content: "This is a test of the responses API. Respond as quickly and as briefly as possible."},
+				{Role: prompts.RoleUser, Content: "Generate a minimalist PNG image icon of a lighthouse."},
+			},
+		}
+
+		rep, _ := generateWithOpenRouterModels(t, client, ctx, req, testenv.OpenRouterImageGenerationModels(t))
+		require.NotNil(t, rep)
+		require.Len(t, rep.Attachments, 1)
+		attachment := rep.Attachments[0]
+		require.Contains(t, attachment.ContentType, "png")
+		require.NotEmpty(t, attachment.Filename)
+		require.NotEmpty(t, attachment.Data)
+	})
 }
 
 // Verifies tool calls and results map to Responses input items and function

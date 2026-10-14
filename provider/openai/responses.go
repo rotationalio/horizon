@@ -158,6 +158,13 @@ func (rc *ResponsesClient) Generate(ctx context.Context, req *provider.Request) 
 			}
 
 			out.Output = append(out.Output, msg)
+		case responses.ResponseOutputItemImageGenerationCall:
+			var attachment *attachments.Attachment
+			if attachment, err = attachments.ParseBase64URI(variant.Result); err != nil {
+				return nil, err
+			}
+			attachment.Filename = "image"
+			out.Attachments = append(out.Attachments, attachment)
 		case responses.ResponseFunctionToolCall:
 			out.Output = append(out.Output, &prompts.Prompt{
 				ID:     variant.ID,

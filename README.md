@@ -389,7 +389,11 @@ func runSummary(ctx context.Context, h *horizon.Horizon, providerConfig provider
 }
 ```
 
-`Run` returns a `*task.Output` and an error. The output includes the parsed or raw `Output`, provider `Model`, transcript `Messages`, usage, timing, and outcome. A partial output may still be returned alongside an error.
+`Run` returns a `*task.Output` and an error. The output includes the parsed or raw `Output`, provider `Model`, transcript via `Messages()`, usage, timing, and outcome. A partial output may still be returned alongside an error.
+
+### Actions log
+
+Each task output includes an `Actions` log for debugging the run. Use `output.Actions.Entries()` to inspect requests, responses, guard decisions, and messages, or `output.Messages()` for just the conversation. See the [actions package docs](actions/docs.go) for examples and details.
 
 ### Tool calling: configure and execute capabilities
 

@@ -15,6 +15,7 @@ import (
 	"testing"
 
 	"github.com/stretchr/testify/require"
+	"go.rtnl.ai/horizon/actions"
 	"go.rtnl.ai/horizon/attachments"
 	"go.rtnl.ai/horizon/errors"
 	"go.rtnl.ai/horizon/prompts"
@@ -25,8 +26,9 @@ import (
 	"go.rtnl.ai/horizon/task/mock"
 )
 
-// Verifies the handler using a cached mock provider.
+// Verifies routed inference, action-log JSON, and usage with a cached mock provider.
 func TestHandlerInference(t *testing.T) {
+	// Return predictable content and usage without making a real provider request.
 	config := testProviderConfig()
 	instance := providermock.New(config.ID)
 	instance.OnGenerate = func(_ context.Context, request *provider.Request) (*provider.Response, error) {
@@ -44,31 +46,138 @@ func TestHandlerInference(t *testing.T) {
 		}, nil
 	}
 
+	// Seed the provider cache so normal task execution resolves this mock instance.
 	h := newTestHorizon(t, testFactory(func(context.Context) (task.Runner, error) {
 		return noopRunner(), nil
 	}))
 	_, err := h.GetOrCreateProvider(config, instance)
 	require.NoError(t, err)
+
+	// Register a task and exercise inference through the real router and handler.
 	handler := h.Handler()
 	handler.Router().Insert("/task", &task.Task{
 		Model:    task.Model{Slug: "test-model"},
 		Provider: &config,
 		Output:   &schema.Output{},
 	})
+
+	// Perform an HTTP request to the task endpoint with a response recorder.
 	response := httptest.NewRecorder()
 	handler.ServeHTTP(response, httptest.NewRequest(http.MethodGet, "/task", nil))
 
+	// Decode the HTTP body to verify the public Output JSON, not just process state.
 	require.Equal(t, http.StatusOK, response.Code)
 	require.Equal(t, "application/json", response.Header().Get("Content-Type"))
 	var output task.Output
 	require.NoError(t, json.NewDecoder(response.Body).Decode(&output))
 	require.Equal(t, "generated", output.Output)
+
+	// The handler round-trips the array-shaped action log, including typed enums
+	// and generation payloads; decoded logs can still produce the conversation.
+	require.Equal(t, 4, output.Actions.Len())
+	entries := output.Actions.Entries()
+	require.Equal(t, actions.TypeGenerationRequest, entries[1].Type)
+	require.Equal(t, actions.EntityModel, entries[1].Receiver)
+	require.Equal(t, entries[1].CorrelationID, entries[2].CorrelationID)
+	require.Equal(t, actions.TypeMessage, entries[3].Type)
+	require.Equal(t, entries[2].CorrelationID, entries[3].CorrelationID)
+	require.Equal(t, "generated", output.Messages()[0].Content)
+
+	// Preserve provider-reported accounting and ensure the request generated once.
 	require.Equal(t, "test-model", output.Model.Slug)
 	require.Equal(t, uint64(1), output.Usage.Invocations)
 	require.Equal(t, int64(2), output.Usage.InputTokens)
 	require.Equal(t, int64(3), output.Usage.OutputTokens)
 	require.Equal(t, int64(5), output.Usage.TotalTokens)
 	require.Equal(t, 1, instance.Calls(t, providermock.Generate))
+}
+
+// Invalid action payloads must not turn successful inference into a failed or
+// truncated HTTP response, including when the output contains attachments.
+func TestHandlerActionEncodingFailure(t *testing.T) {
+	for _, multipartOutput := range []bool{false, true} {
+		name := "JSON"
+		if multipartOutput {
+			name = "Multipart"
+		}
+		t.Run(name, func(t *testing.T) {
+			// Fail encoding only inside the log; the generated answer and any
+			// returned attachment must remain usable by the client.
+			config := testProviderConfig()
+			instance := providermock.New(config.ID)
+			instance.OnGenerate = func(context.Context, *provider.Request) (*provider.Response, error) {
+				response := &provider.Response{
+					Output: prompts.Prompts{{Role: prompts.RoleAssistant, Type: prompts.TypeMessage, Content: "generated"}},
+					Meta:   provider.Meta{"unsupported": make(chan int)},
+				}
+				if multipartOutput {
+					response.Attachments = attachments.Attachments{{Filename: "result.txt", Data: []byte("file content")}}
+				}
+				return response, nil
+			}
+			h := newTestHorizon(t, testFactory(func(context.Context) (task.Runner, error) { return noopRunner(), nil }))
+			_, err := h.GetOrCreateProvider(config, instance)
+			require.NoError(t, err)
+			handler := h.Handler()
+			handler.Router().Insert("/task", &task.Task{
+				Model: task.Model{Slug: "test-model"}, Provider: &config, Output: &schema.Output{},
+			})
+
+			response := httptest.NewRecorder()
+			handler.ServeHTTP(response, httptest.NewRequest(http.MethodGet, "/task", nil))
+			require.Equal(t, http.StatusOK, response.Code)
+
+			// Decode the actual response envelope, whether it is a JSON body or
+			// the output part of a multipart body.
+			var body io.Reader = response.Body
+			var parts *multipart.Reader
+			if multipartOutput {
+				mediaType, params, err := mime.ParseMediaType(response.Header().Get("Content-Type"))
+				require.NoError(t, err)
+				require.Equal(t, "multipart/form-data", mediaType)
+				parts = multipart.NewReader(response.Body, params["boundary"])
+				part, err := parts.NextPart()
+				require.NoError(t, err)
+				require.Equal(t, "output", part.FormName())
+				body = part
+			} else {
+				require.Equal(t, "application/json", response.Header().Get("Content-Type"))
+			}
+			var output task.Output
+			require.NoError(t, json.NewDecoder(body).Decode(&output))
+			require.Equal(t, "generated", output.Output)
+			require.Equal(t, task.OutcomeSucceeded, output.Outcome)
+			require.Equal(t, uint64(1), output.Usage.Invocations)
+
+			// Only the unencodable generation response becomes an error event;
+			// the request and delivered conversation survive the round trip.
+			entries := output.Actions.Entries()
+			require.Len(t, entries, 4)
+			require.Equal(t, actions.TypeGenerationRequest, entries[1].Type)
+			require.Equal(t, actions.TypeError, entries[2].Type)
+			require.Equal(t, uint64(3), entries[2].Sequence)
+			require.Equal(t, actions.EntitySystem, entries[2].Sender)
+			require.Equal(t, actions.EntitySystem, entries[2].Receiver)
+			require.Equal(t, entries[1].CorrelationID, entries[2].CorrelationID)
+			require.Equal(t, "error encoding action: json: unsupported type: chan int", entries[2].Error)
+			require.Equal(t, actions.TypeMessage, entries[3].Type)
+			require.Equal(t, entries[2].CorrelationID, entries[3].CorrelationID)
+			require.Len(t, output.Messages(), 1)
+			require.Equal(t, "generated", output.Messages()[0].Content)
+
+			// Log encoding failures must not discard or corrupt attachment parts.
+			if multipartOutput {
+				part, err := parts.NextPart()
+				require.NoError(t, err)
+				require.Equal(t, "result.txt", part.FileName())
+				data, err := io.ReadAll(part)
+				require.NoError(t, err)
+				require.Equal(t, "file content", string(data))
+				_, err = parts.NextPart()
+				require.ErrorIs(t, err, io.EOF)
+			}
+		})
+	}
 }
 
 // Verifies routed requests preserve GET, JSON, multipart input, and output handling.
@@ -158,6 +267,7 @@ func TestHandler(t *testing.T) {
 				require.NoError(t, json.NewDecoder(part).Decode(&output))
 				require.Equal(t, task.OutcomeSucceeded, output.Outcome)
 				require.Equal(t, "Hello, world!", output.Output)
+				require.Positive(t, output.Actions.Len(), "multipart JSON must retain the action log")
 				part, err = reader.NextPart()
 				require.NoError(t, err)
 				require.Equal(t, "test.txt", part.FileName())
@@ -172,6 +282,14 @@ func TestHandler(t *testing.T) {
 				require.NoError(t, json.NewDecoder(response.Body).Decode(&output))
 				require.Equal(t, task.OutcomeSucceeded, output.Outcome)
 				require.Equal(t, "Hello, world!", output.Output)
+				require.Positive(t, output.Actions.Len())
+				if tt.attachments {
+					files := output.Actions.Entries()[0].Attachments
+					require.Len(t, files, 1)
+					require.Equal(t, "test.txt", files[0].Filename)
+					require.Equal(t, "f8c31ab7b3ec231ac30f5121f5159ddce601f3e5db46047def2bd9fba7ae9e65", files[0].SHA256)
+					require.Equal(t, len("This is an attached file."), files[0].Size)
+				}
 			}
 		})
 	}

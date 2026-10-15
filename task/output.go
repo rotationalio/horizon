@@ -25,7 +25,7 @@ type Output struct {
 	Output       any                 `json:"output,omitempty"` // Final or partial model output; Run may return it with an error.
 	MimeType     mime.Type           `json:"mime_type"`
 	Capabilities []capabilities.Name `json:"capabilities"`
-	Actions      actions.Actions     `json:"actions,omitempty"` // Log of important actions.
+	Actions      *actions.Actions    `json:"actions,omitempty,omitzero"` // Log of important actions.
 	Started      time.Time           `json:"started"`
 	Finished     time.Time           `json:"finished"`
 	Outcome      Outcome             `json:"outcome"`
@@ -34,7 +34,9 @@ type Output struct {
 
 // Messages returns the conversation view of the execution's action log.
 func (o *Output) Messages() prompts.Prompts {
-	// TODO: apply configured transcript filters once action recording is implemented.
+	if o == nil {
+		return nil
+	}
 	return o.Actions.Messages()
 }
 

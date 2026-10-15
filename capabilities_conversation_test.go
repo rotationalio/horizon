@@ -65,8 +65,8 @@ func TestCapabilitiesConversation(t *testing.T) {
 		return nil
 	}
 
-	// Output guards can change accepted responses. Change the third call's arguments
-	// before execution, and replace the final answer before it is returned.
+	// Output validation receives a snapshot too. Attempt to change the third call's
+	// arguments and final answer; neither edit may reach execution or delivery.
 	runner.OutputGuard.OnProtectOutput = func(response *provider.Response) error {
 		if len(response.Output[0].ToolCalls) == 0 {
 			response.Output[0].Content = "guarded final answer"
@@ -76,12 +76,12 @@ func TestCapabilitiesConversation(t *testing.T) {
 		return nil
 	}
 
-	// Record dispatch order and check that the executor sees the output guard's edit.
+	// Record dispatch order and verify execution uses the original model arguments.
 	var executed []string
 	runner.CapabilityRunner.OnExecuteCapability = func(_ context.Context, request capabilities.Request) (capabilities.Response, *capabilities.Error) {
 		executed = append(executed, request.CallID)
 		if request.CallID == "call-3" {
-			require.Equal(t, float64(42), request.Arguments["id"])
+			require.Equal(t, float64(0), request.Arguments["id"])
 		}
 		return capabilities.NewToolTextContentResponse("result " + request.CallID), nil
 	}
@@ -115,7 +115,7 @@ func TestCapabilitiesConversation(t *testing.T) {
 		default:
 			require.Equal(t, 3, turn, "the final answer must stop inference")
 			require.Len(t, request.Input, 7)
-			require.Equal(t, `{"id":42}`, request.Input[5].ToolCalls[0].Arguments)
+			require.Equal(t, `{"id":0}`, request.Input[5].ToolCalls[0].Arguments)
 			require.Equal(t, "call-3", request.Input[6].ToolResults[0].CallID)
 			return processTestResponse(), nil
 		}
@@ -125,7 +125,7 @@ func TestCapabilitiesConversation(t *testing.T) {
 	runner.Runner.OnFinalize = func(ctx context.Context, output *task.Output, executionErr error) error {
 		require.NoError(t, ctx.Err())
 		require.NoError(t, executionErr)
-		require.Equal(t, "guarded final answer", output.Output)
+		require.Equal(t, "answer", output.Output)
 		require.Len(t, output.Messages(), 8, "requires all messages to pass through filtering")
 		return nil
 	}
@@ -135,7 +135,7 @@ func TestCapabilitiesConversation(t *testing.T) {
 
 	// Assert final-only output, cumulative usage, sequential execution, and one-time setup.
 	require.NoError(t, err)
-	require.Equal(t, "guarded final answer", output.Output)
+	require.Equal(t, "answer", output.Output)
 	require.Equal(t, uint64(3), output.Usage.Invocations)
 	require.Equal(t, uint64(3), output.Usage.ToolCalls)
 	require.Equal(t, int64(54), output.Usage.TotalTokens)
@@ -489,7 +489,7 @@ func TestCapabilitiesExistingHistory(t *testing.T) {
 
 // Runs the loop with no guards, each guard separately, and both together. This checks
 // that Horizon discovers each optional guard independently, ignores input-guard edits to
-// the provider request, and keeps output-guard changes across the tool exchange.
+// the provider request, and ignores output-guard edits across the tool exchange.
 func TestCapabilitiesOptionalGuards(t *testing.T) {
 	for _, guards := range []string{"none", "input only", "output only", "both"} {
 		t.Run(guards, func(t *testing.T) {
@@ -546,7 +546,7 @@ func TestCapabilitiesOptionalGuards(t *testing.T) {
 			}
 			if guards == "output only" || guards == "both" {
 				runner.OutputGuard.AssertCalled(t, mock.ProtectOutput, 2)
-				require.Equal(t, "guarded answer", output.Output)
+				require.Equal(t, "answer", output.Output)
 			} else {
 				runner.OutputGuard.AssertNotCalled(t, mock.ProtectOutput)
 				require.Equal(t, "answer", output.Output)

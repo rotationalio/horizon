@@ -15,6 +15,12 @@ const (
 	TypeCapabilityResponse
 	TypeInputGuard
 	TypeOutputGuard
+
+	// TypeError records a diagnostic about the action log itself.
+	TypeError
+
+	// TODO: record webhook callbacks/retries, async queue and worker handoffs, and
+	// task-to-task messages when those execution paths are implemented.
 )
 
 var typeNames = []string{
@@ -26,4 +32,5 @@ var typeNames = []string{
 	"capability_response",
 	"input_guard",
 	"output_guard",
+	"error",
 }

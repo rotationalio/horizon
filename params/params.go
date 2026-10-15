@@ -239,6 +239,10 @@ func (p *Params) UnmarshalJSON(data []byte) error {
 		return err
 	}
 
+	if p.params == nil {
+		p.params = make(map[string]any, len(obj))
+	}
+
 	for key, value := range obj {
 		p.Set(key, value)
 	}

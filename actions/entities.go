@@ -2,8 +2,7 @@ package actions
 
 //go:generate enumify -names entityNames
 
-// Entity identifies the kind of participant sending or receiving an action.
-// Entity kinds are distinct from the roles of messages inside a model request.
+// Entity identifies the participant sending or receiving an action.
 type Entity uint8
 
 const (
@@ -12,6 +11,9 @@ const (
 	EntityUser
 	EntityModel
 	EntityCapability
+	EntityRunner
+	EntityInputGuard
+	EntityOutputGuard
 )
 
 var entityNames = []string{
@@ -20,4 +22,7 @@ var entityNames = []string{
 	"user",
 	"model",
 	"capability",
+	"runner",
+	"input_guard",
+	"output_guard",
 }

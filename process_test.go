@@ -4,15 +4,20 @@ import (
 	"context"
 	"encoding/json"
 	"fmt"
+	"io"
+	"log/slog"
 	"net/http"
 	"net/http/httptest"
+	"strings"
 	"testing"
+	"time"
 
 	"github.com/stretchr/testify/require"
 
 	"go.rtnl.ai/horizon"
+	"go.rtnl.ai/horizon/actions"
 	"go.rtnl.ai/horizon/attachments"
-	"go.rtnl.ai/horizon/config"
+	"go.rtnl.ai/horizon/capabilities"
 	"go.rtnl.ai/horizon/errors"
 	"go.rtnl.ai/horizon/params"
 	"go.rtnl.ai/horizon/prompts"
@@ -24,6 +29,7 @@ import (
 	"go.rtnl.ai/horizon/task/mock"
 	"go.rtnl.ai/ulid"
 	"go.rtnl.ai/x/mime"
+	"go.rtnl.ai/x/rlog"
 )
 
 // Verifies that a successful inference is guarded, accounted, and finalized in order.
@@ -44,7 +50,7 @@ func TestProcessRunSuccessfulInference(t *testing.T) {
 
 	require.NoError(t, err)
 	require.NotNil(t, output)
-	require.Equal(t, "guarded answer", output.Output)
+	require.Equal(t, "answer", output.Output)
 	require.Equal(t, mime.TextPlain, output.MimeType)
 	require.Equal(t, "served-model", output.Model.Slug)
 	require.Equal(t, uint64(1), output.Usage.Invocations)
@@ -165,6 +171,63 @@ func TestProcessRunStopsWhenOutputGuardRejects(t *testing.T) {
 	require.Equal(t, uint64(1), output.Usage.Invocations)
 	require.Equal(t, int64(18), output.Usage.TotalTokens)
 	require.Equal(t, []string{"prepare", "input guard", "output guard", "finalize"}, runner.events)
+}
+
+// Output guards receive validation snapshots. Their edits must affect neither
+// delivered content, provider-owned data, accounting, nor recorded debug payloads.
+func TestProcessOutputGuardMutationsIgnored(t *testing.T) {
+	response := processTestResponse()
+	response.Output[0].Type = prompts.TypeMessage
+	response.Output[0].Meta = map[string]any{"nested": []any{"original"}}
+	response.Meta = provider.Meta{"nested": map[string]any{"value": "original"}}
+	response.Attachments = attachments.Attachments{{Filename: "file.txt", Data: []byte("abc")}}
+	original := response.Clone()
+	inference := mockprovider.New(ulid.Make())
+	inference.OnGenerate = func(context.Context, *provider.Request) (*provider.Response, error) {
+		return response, nil
+	}
+	runner := &processTestRunner{protectOutput: func(snapshot *provider.Response) error {
+		require.NotSame(t, response, snapshot)
+		require.NotSame(t, response.Output[0], snapshot.Output[0])
+		snapshot.Output[0].Content = "changed"
+		snapshot.Output[0].Meta["nested"].([]any)[0] = "changed"
+		snapshot.Output[0].ToolCalls = []prompts.ToolCall{{CallID: "unexpected", Name: "lookup"}}
+		snapshot.Attachments[0].Filename = "changed"
+		snapshot.Attachments[0].Data[0] = 'X'
+		snapshot.Model = "changed"
+		snapshot.Usage.TotalTokens = 999
+		snapshot.Meta["nested"].(map[string]any)["value"] = "changed"
+		return nil
+	}}
+
+	// An accepted response remains the provider's original answer, not the edits.
+	output, err := runProcessTest(t, t.Context(), inference, runner, &schema.Output{})
+	require.NoError(t, err)
+	require.Equal(t, original, response)
+	require.Equal(t, "answer", output.Output)
+	require.Equal(t, original.Model, output.Model.Slug)
+	require.Equal(t, original.Usage.TotalTokens, output.Usage.TotalTokens)
+	require.Equal(t, original.Attachments, output.Attachments)
+	messages := output.Messages()
+	require.Equal(t, original.Output[0], messages[len(messages)-1])
+
+	// The raw response and delivered message are distinct events with one identity
+	// for their relationship. Both must preserve the original nested content.
+	var raw, delivered *actions.Action
+	for _, entry := range output.Actions.Entries() {
+		if entry.Type == actions.TypeGenerationResponse {
+			raw = entry
+		}
+		if entry.Type == actions.TypeMessage && entry.Sender == actions.EntityModel {
+			delivered = entry
+		}
+	}
+	require.NotNil(t, raw)
+	require.NotNil(t, delivered)
+	require.Equal(t, raw.CorrelationID, delivered.CorrelationID)
+	require.Equal(t, original.Output, raw.GenerationResponse.Output)
+	require.Equal(t, original.Output, delivered.Messages)
+	require.Equal(t, raw.Attachments, delivered.Attachments)
 }
 
 // Confirms cancellation after provider work preserves usage but discards the response.
@@ -771,6 +834,23 @@ func TestProcessRunGenerationFailures(t *testing.T) {
 				require.ErrorIs(t, err, want)
 			}
 
+			// Response events record only what the provider returned, not errors
+			// from cancellation, guards, or Horizon's missing-output validation.
+			var responseEvent *actions.Action
+			for _, event := range output.Actions.Entries() {
+				if event.Type == actions.TypeGenerationResponse {
+					responseEvent = event
+					break
+				}
+			}
+			require.NotNil(t, responseEvent)
+			require.Equal(t, tt.response, responseEvent.GenerationResponse != nil)
+			if tt.providerErr != nil {
+				require.Equal(t, tt.providerErr.Error(), responseEvent.Error)
+			} else {
+				require.Empty(t, responseEvent.Error)
+			}
+
 			// Guard rejection prevents decoding; a missing response must not mask other failures.
 			if !tt.malformedJSON || tt.guardErr != nil {
 				require.NotErrorIs(t, err, errors.ErrInvalidModelOutput)
@@ -823,7 +903,7 @@ func TestProcessRunGenerationFailures(t *testing.T) {
 }
 
 // Checks the allow path with neither guard, either guard alone, or both guards.
-// Input-guard mutations are isolated from inference; output-guard edits remain visible.
+// Both input- and output-guard mutations stay isolated from execution.
 func TestProcessRunOptionalGuards(t *testing.T) {
 	for _, guards := range []string{"none", "input only", "output only", "both"} {
 		t.Run(guards, func(t *testing.T) {
@@ -875,10 +955,9 @@ func TestProcessRunOptionalGuards(t *testing.T) {
 			// Assert execution succeeds for every combination, including no guards.
 			require.NoError(t, err)
 
-			// Output-guard changes must reach the result; absent guards must never be called.
+			// Guard mutations are ignored; absent guards must never be called.
 			want := "answer"
 			if guards == "output only" || guards == "both" {
-				want = "guarded answer"
 				outputGuard.AssertCalled(t, mock.ProtectOutput, 1)
 			} else {
 				outputGuard.AssertNotCalled(t, mock.ProtectOutput)
@@ -1078,25 +1157,21 @@ func TestProcessOutputMessages(t *testing.T) {
 	require.Equal(t, prompts.TypeReasoning, response.Output[0].Type)
 	require.Equal(t, prompts.TypeUnknown, response.Output[1].Type)
 
-	// Filtering copies the slice, not the retained prompt objects. Replacing an
-	// application history entry must not replace the provider's response entry.
-	require.Same(t, input, output.Messages()[0])
-	require.Same(t, answer, output.Messages()[3])
-	output.Messages()[3] = &prompts.Prompt{Content: "replacement"}
+	// The conversation is an independent snapshot. Editing a returned slice or
+	// prompt must not change either the cached transcript or provider response.
+	messages := output.Messages()
+	require.NotSame(t, input, messages[0])
+	require.NotSame(t, answer, messages[3])
+	messages[0].Content = "changed question"
+	messages[3] = &prompts.Prompt{Content: "replacement"}
+	require.Equal(t, "question", output.Messages()[0].Content)
+	require.Equal(t, "answer", output.Messages()[3].Content)
 	require.Same(t, answer, response.Output[2])
 	inference.AssertCalled(t, mockprovider.Generate, 1)
 }
 
-// TestProcessOutputMessageConfiguredFilters verifies configured type and role filters affect returned history.
-func TestProcessOutputMessageConfiguredFilters(t *testing.T) {
-	conf, err := config.Get()
-	require.NoError(t, err)
-	original := conf
-	t.Cleanup(func() { require.NoError(t, config.Set(original)) })
-	conf.FilterOutputMessageTypes = []prompts.Type{prompts.TypeRefusal}
-	conf.FilterOutputMessageRoles = []prompts.Role{prompts.RoleDeveloper}
-	require.NoError(t, config.Set(conf))
-
+// Callers can filter output messages without changing the recorded conversation.
+func TestProcessOutputMessageFilters(t *testing.T) {
 	input := &prompts.Prompt{Role: prompts.RoleUser, Type: prompts.TypeMessage, Content: "question"}
 	answer := &prompts.Prompt{Role: prompts.RoleAssistant, Type: prompts.TypeMessage, Content: "answer"}
 	response := processTestResponse()
@@ -1121,7 +1196,9 @@ func TestProcessOutputMessageConfiguredFilters(t *testing.T) {
 	output, err := runProcessTest(t, context.Background(), inference, host, &schema.Output{})
 
 	require.NoError(t, err)
-	require.Equal(t, prompts.Prompts{input, answer}, output.Messages())
+	filtered := output.Messages().FilterOutTypes(prompts.TypeRefusal).FilterOutRoles(prompts.RoleDeveloper)
+	require.Equal(t, prompts.Prompts{input, answer}, filtered)
+	require.Equal(t, prompts.Prompts{input, answer, response.Output[1], response.Output[2]}, output.Messages())
 }
 
 // Attachment preparation errors stop before inference, including cancellation
@@ -1214,6 +1291,341 @@ func TestProcessAttachmentFailures(t *testing.T) {
 	}
 }
 
+// Interaction events preserve raw provider output for debugging, while the
+// conversation contains only accepted content. Every completed provider call
+// must have a response event, even if a guard rejects it or delivery is cancelled.
+func TestProcessActionLog(t *testing.T) {
+	guardErr := errors.New("blocked")
+	for _, test := range []struct {
+		name           string
+		inputRejected  bool
+		outputRejected bool
+		cancelled      bool
+		wantEvents     int
+	}{
+		{
+			name:       "accepted with ignored mutations",
+			wantEvents: 6,
+		},
+		{
+			name:          "input rejected",
+			inputRejected: true,
+			wantEvents:    2,
+		},
+		{
+			name:           "output rejected",
+			outputRejected: true,
+			wantEvents:     5,
+		},
+		{
+			name:       "cancelled delivery",
+			cancelled:  true,
+			wantEvents: 4,
+		},
+	} {
+		t.Run(test.name, func(t *testing.T) {
+			ctx, cancel := context.WithCancel(context.Background())
+			defer cancel()
+			response := processTestResponse()
+			response.Output = prompts.Prompts{{Role: prompts.RoleAssistant, Type: prompts.TypeMessage, Content: "raw"}}
+			inference := mockprovider.New(ulid.Make())
+			inference.OnGenerate = func(context.Context, *provider.Request) (*provider.Response, error) {
+				if test.cancelled {
+					cancel()
+				}
+				return response, nil
+			}
+			runner := &processTestRunner{
+				protectInput: func(*provider.Request) error {
+					if test.inputRejected {
+						return guardErr
+					}
+					return nil
+				},
+				protectOutput: func(response *provider.Response) error {
+					response.Output[0].Content = "guarded"
+					if test.outputRejected {
+						return guardErr
+					}
+					return nil
+				},
+			}
+			renderer := &mock.Renderer{OnRender: func(templates.Templates, prompts.Context) (prompts.Prompts, error) {
+				return prompts.Prompts{{Role: prompts.RoleUser, Type: prompts.TypeMessage, Content: "question"}}, nil
+			}}
+			host := struct {
+				*processTestRunner
+				*mock.Renderer
+			}{runner, renderer}
+
+			// Execute through the actual process so recording order and acceptance
+			// are tested at the provider/guard boundaries, not just via helpers.
+			output, err := runProcessTest(t, ctx, inference, host, &schema.Output{})
+			if test.cancelled {
+				require.ErrorIs(t, err, context.Canceled)
+			} else if test.inputRejected || test.outputRejected {
+				require.ErrorIs(t, err, guardErr)
+			} else {
+				require.NoError(t, err)
+			}
+			entries := output.Actions.Entries()
+			require.Len(t, entries, test.wantEvents)
+			require.Equal(t, actions.TypeMessage, entries[0].Type)
+			require.Equal(t, actions.TypeInputGuard, entries[1].Type)
+			if test.inputRejected {
+				require.NotEmpty(t, entries[1].Error)
+				require.Len(t, output.Messages(), 1)
+				return
+			}
+			require.Equal(t, actions.TypeGenerationRequest, entries[2].Type)
+			require.Equal(t, actions.TypeGenerationResponse, entries[3].Type)
+			require.Equal(t, entries[2].CorrelationID, entries[3].CorrelationID)
+			require.Equal(t, "raw", entries[3].GenerationResponse.Output[0].Content)
+			require.Empty(t, entries[3].Error)
+			if test.cancelled {
+				require.Len(t, output.Messages(), 1)
+				return
+			}
+			require.Equal(t, actions.TypeOutputGuard, entries[4].Type)
+			require.Equal(t, entries[3].CorrelationID, entries[4].CorrelationID)
+			if test.outputRejected {
+				require.NotEmpty(t, entries[4].Error)
+				require.Len(t, output.Messages(), 1)
+			} else {
+				require.Equal(t, actions.TypeMessage, entries[5].Type)
+				require.Equal(t, entries[3].CorrelationID, entries[5].CorrelationID)
+				require.Equal(t, "raw", entries[5].Messages[0].Content)
+				require.Len(t, output.Messages(), 2)
+				require.Equal(t, "raw", output.Messages()[1].Content)
+			}
+		})
+	}
+}
+
+// Compare complete runs with and without action recording. Each run exercises
+// every runner interface, executes one capability, and makes two model requests.
+// Requests and responses include schemas, attachments, metadata, and tool content
+// so cloning costs are measured with populated payloads, not empty containers.
+// The nil-log baseline still constructs recording arguments and emits warnings;
+// it is not a pre-log build.
+func BenchmarkProcessActions(b *testing.B) {
+	// Format warnings normally but discard their bytes so terminal I/O does not
+	// dominate the nil-log case. Restore the logger for other tests/benchmarks.
+	previous := slog.Default()
+	rlog.SetDefault(rlog.New(slog.New(slog.NewTextHandler(io.Discard, nil))))
+	b.Cleanup(func() { rlog.SetDefault(rlog.New(previous)) })
+
+	// Record with and without actions logging.
+	for _, record := range []bool{false, true} {
+		name := "WithoutActions"
+		if record {
+			name = "WithActions"
+		}
+		b.Run(name, func(b *testing.B) {
+			// Reuse fixtures and the provider cache. Each iteration creates a fresh
+			// process, requests a tool, delivers its result, and gets a final answer.
+			messages := prompts.Prompts{
+				{Role: prompts.RoleSystem, Type: prompts.TypeMessage, Content: "Answer the user's question."},
+				{
+					Role: prompts.RoleUser, Type: prompts.TypeMessage,
+					Content: strings.Repeat("question ", 128),
+					Citations: []prompts.Citation{{
+						StartIndex: 0, EndIndex: 8,
+						Title: "Input context", URL: "https://example.com/context",
+					}},
+					Meta: map[string]any{
+						"source": map[string]any{"name": "benchmark"},
+						"tags":   []any{"question"},
+					},
+				},
+			}
+			tools := []capabilities.Definition{{
+				Name: "lookup", Description: "Look up supporting context.",
+				InputSchema: &schema.Schema{
+					Name: "lookup-input", MimeType: mime.ApplicationSchemaJSON,
+					Data: `{"type":"object","properties":{"query":{"type":"string"}},"required":["query"]}`,
+				},
+			}}
+			call := prompts.ToolCall{
+				CallID: "benchmark-call", Name: "lookup", Arguments: `{"query":"benchmark"}`,
+			}
+			toolResult := strings.Repeat("lookup result ", 128)
+			created := time.Now().UTC()
+
+			// Both provider responses carry files and metadata. The first requests
+			// a tool; the second returns cited text matching the output schema.
+			toolResponse := &provider.Response{
+				ID: "benchmark-tool-response", Model: "benchmark-model", Created: created,
+				Usage: provider.Usage{InputTokens: 300, OutputTokens: 100, TotalTokens: 400, APICost: 0.001},
+				Output: prompts.Prompts{
+					{
+						Role: prompts.RoleAssistant, Type: prompts.TypeReasoning,
+						Content: strings.Repeat("reasoning ", 64),
+						Meta:    map[string]any{"source": "model"},
+					},
+					{
+						Role: prompts.RoleAssistant, Type: prompts.TypeToolCall,
+						ToolCalls: []prompts.ToolCall{call},
+					},
+				},
+				Attachments: attachments.Attachments{{
+					Filename: "plan.txt", ContentType: "text/plain",
+					Data: []byte("Look up supporting context."),
+				}},
+				Meta: provider.Meta{"request": map[string]any{"id": "benchmark-tool"}},
+			}
+			answer := `{"answer":"` + strings.Repeat("answer ", 128) + `"}`
+			finalResponse := &provider.Response{
+				ID: "benchmark-final-response", Model: "benchmark-model", Created: created,
+				Usage: provider.Usage{InputTokens: 600, OutputTokens: 250, TotalTokens: 850, APICost: 0.002},
+				Output: prompts.Prompts{{
+					Role: prompts.RoleAssistant, Type: prompts.TypeMessage,
+					Content: answer, Status: "completed", Phase: "final_answer",
+					Citations: []prompts.Citation{{
+						StartIndex: 11, EndIndex: 17,
+						Title: "Lookup result", URL: "https://example.com/result",
+					}},
+					Meta: map[string]any{
+						"source": map[string]any{"name": "lookup"},
+						"tags":   []string{"answer"},
+					},
+				}},
+				Attachments: attachments.Attachments{{
+					Filename: "answer.json", ContentType: "application/json", Data: []byte(answer),
+				}},
+				Meta: provider.Meta{"request": map[string]any{"id": "benchmark-final"}},
+			}
+			runner := &benchmarkActionsRunner{
+				Runner: &mock.Runner{OnFinalize: func(context.Context, *task.Output, error) error { return nil }},
+
+				// Optional processors leave their inputs unchanged.
+				InputProcessor: &mock.InputProcessor{OnProcessInput: func(input *task.Input) (*task.Input, error) {
+					return input, nil
+				}},
+				ContextProcessor: &mock.ContextProcessor{OnProcessContext: func(ctx prompts.Context) (prompts.Context, error) {
+					return ctx, nil
+				}},
+				AttachmentProcessor: &mock.AttachmentProcessor{OnProcessAttachment: func(file *attachments.Attachment) (*attachments.Attachment, error) {
+					return file, nil
+				}},
+				Renderer: &mock.Renderer{OnRender: func(templates.Templates, prompts.Context) (prompts.Prompts, error) {
+					return messages, nil
+				}},
+				InputGuard:  &mock.InputGuard{OnProtectInput: func(*provider.Request) error { return nil }},
+				OutputGuard: &mock.OutputGuard{OnProtectOutput: func(*provider.Response) error { return nil }},
+
+				// Resolve and execute a real mock tool exchange on every run.
+				CapabilityRunner: &mock.CapabilityRunner{
+					OnLookupCapabilities: func(context.Context, []capabilities.Name) ([]capabilities.Definition, error) {
+						return tools, nil
+					},
+					OnExecuteCapability: func(context.Context, capabilities.Request) (capabilities.Response, *capabilities.Error) {
+						return capabilities.NewToolTextContentResponse(toolResult), nil
+					},
+				},
+			}
+			h, err := horizon.New(testFactory(func(context.Context) (task.Runner, error) { return runner, nil }))
+			require.NoError(b, err)
+			configuration := testProviderConfig()
+			inference := mockprovider.New(configuration.ID)
+			inference.OnGenerate = func(_ context.Context, request *provider.Request) (*provider.Response, error) {
+				// Respond to the delivered tool result rather than keeping a turn
+				// counter that would need resetting for every benchmark iteration.
+				last := request.Input[len(request.Input)-1]
+				if len(last.ToolResults) > 0 {
+					return finalResponse, nil
+				}
+				return toolResponse, nil
+			}
+			_, err = h.GetOrCreateProvider(configuration, inference)
+			require.NoError(b, err)
+
+			definition := &task.Task{
+				Provider: &configuration,
+				Model: task.Model{Slug: "benchmark-model", Parameters: params.New(map[string]any{
+					params.Temperature:  0.5,
+					params.MaxToolTurns: 1,
+				})},
+				Capabilities: []capabilities.Name{"lookup"},
+				Output: &schema.Output{Schema: &schema.Schema{
+					Name: "answer", Description: "The final answer.", Strict: true,
+					MimeType: mime.ApplicationSchemaJSON,
+					Data:     `{"type":"object","properties":{"answer":{"type":"string"}},"required":["answer"]}`,
+				}},
+			}
+			input := &task.Input{
+				Context: prompts.Context{"query": "benchmark"},
+				Attachments: attachments.Attachments{{
+					Filename: "context.txt", ContentType: "text/plain",
+					Data: []byte(strings.Repeat("data", 1024)),
+				}},
+			}
+			ctx := b.Context()
+			run := func() (*task.Output, error) {
+				proc := h.NewProcessForTest(runner, input, definition)
+				runner.OnPrepare = func(context.Context, *task.Task) error {
+					if !record {
+						proc.SetActionsForTest(nil)
+					}
+					return nil
+				}
+				return proc.Run(ctx)
+			}
+
+			// Check every hook and the complete exchange before starting the timer.
+			output, err := run()
+			require.NoError(b, err)
+			require.Equal(b, json.RawMessage(answer), output.Output)
+			require.Equal(b, uint64(2), output.Usage.Invocations)
+			require.Equal(b, uint64(1), output.Usage.ToolCalls)
+			require.Len(b, output.Attachments, 2)
+
+			runner.Runner.AssertCalled(b, mock.Prepare, 1)
+			runner.Runner.AssertCalled(b, mock.Finalize, 1)
+			runner.InputProcessor.AssertCalled(b, mock.ProcessInput, 1)
+			runner.ContextProcessor.AssertCalled(b, mock.ProcessContext, 1)
+			runner.AttachmentProcessor.AssertCalled(b, mock.ProcessAttachment, 1)
+			runner.Renderer.AssertCalled(b, mock.Render, 1)
+			runner.InputGuard.AssertCalled(b, mock.ProtectInput, 2)
+			runner.OutputGuard.AssertCalled(b, mock.ProtectOutput, 2)
+			runner.CapabilityRunner.AssertCalled(b, mock.LookupCapabilities, 1)
+			runner.CapabilityRunner.AssertCalled(b, mock.ExecuteCapability, 1)
+			inference.AssertCalled(b, mockprovider.Generate, 2)
+
+			if record {
+				require.Equal(b, 14, output.Actions.Len())
+				require.Equal(b, prompts.Prompts{
+					messages[0], messages[1], toolResponse.Output[0], toolResponse.Output[1],
+					{
+						Role: prompts.RoleTool, Type: prompts.TypeMessage,
+						ToolResults: []prompts.ToolResponse{{CallID: call.CallID, Content: toolResult}},
+					},
+					finalResponse.Output[0],
+				}, output.Messages())
+
+				// Ensure the larger request/response fields are actually recorded.
+				entries := output.Actions.Entries()
+				require.Equal(b, tools, entries[2].GenerationRequest.Tools)
+				require.Equal(b, definition.Output.Schema, entries[2].GenerationRequest.OutputSchema)
+				require.NotNil(b, entries[2].GenerationRequest.Params)
+				require.Len(b, entries[2].Attachments, 1)
+				require.Equal(b, toolResponse.Meta, entries[3].GenerationResponse.Meta)
+				require.Len(b, entries[3].Attachments, 1)
+				require.Len(b, entries[11].Attachments, 1)
+			} else {
+				require.Nil(b, output.Actions)
+			}
+
+			b.ReportAllocs()
+			for b.Loop() {
+				if _, err := run(); err != nil {
+					b.Fatal(err)
+				}
+			}
+		})
+	}
+}
+
 // Holds configurable host hooks for exercising one execution lifecycle.
 type processTestRunner struct {
 	events        []string
@@ -1295,4 +1707,19 @@ func processTestResponse() *provider.Response {
 			Content: "answer",
 		}},
 	}
+}
+
+// Ensure the benchmark runner implements the complete set of runner interfaces.
+var _ task.CompleteRunner = (*benchmarkActionsRunner)(nil)
+
+// Compose the existing mocks so both cases expose the same runner interfaces.
+type benchmarkActionsRunner struct {
+	*mock.Runner
+	*mock.InputProcessor
+	*mock.ContextProcessor
+	*mock.AttachmentProcessor
+	*mock.Renderer
+	*mock.InputGuard
+	*mock.OutputGuard
+	*mock.CapabilityRunner
 }

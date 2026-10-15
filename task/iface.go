@@ -12,6 +12,20 @@ import (
 	"go.rtnl.ai/horizon/provider"
 )
 
+// CompleteRunner combines Runner and every optional runner interface. Add future
+// runner interfaces here so implementations and benchmarks can check completeness.
+// Individual runners only need to implement the optional interfaces they use.
+type CompleteRunner interface {
+	Runner
+	InputProcessor
+	ContextProcessor
+	AttachmentProcessor
+	Renderer
+	InputGuard
+	OutputGuard
+	CapabilityRunner
+}
+
 // A horizon runner defines the methods required to execute a task. Horizon execution
 // uses the runner to manage the execution process and to provide a consistent interface
 // to the results and the audit logging.
@@ -77,7 +91,8 @@ type InputGuard interface {
 // OutputGuards are used to validate LLM output responses to ensure that they are not
 // leaking sensitive information or other data that should not be returned to the user.
 // The OutputGuard is applied to every LLM response, even ones that are requesting tool
-// calls or other intermediate responses.
+// calls or other intermediate responses. Horizon passes a response clone so guards
+// can accept or reject it, but their mutations do not change delivered output.
 type OutputGuard interface {
 	ProtectOutput(*provider.Response) error
 }

@@ -8,7 +8,7 @@ import (
 
 func TestEntity(t *testing.T) {
 	suite := enumify.TestSuite[Entity, []string]{
-		Values: []Entity{EntityUnknown, EntitySystem, EntityUser, EntityModel, EntityCapability},
+		Values: []Entity{EntityUnknown, EntitySystem, EntityUser, EntityModel, EntityCapability, EntityRunner, EntityInputGuard, EntityOutputGuard},
 		Names:  entityNames,
 		ICase:  true,
 		ISpace: true,

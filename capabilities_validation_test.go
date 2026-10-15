@@ -10,6 +10,7 @@ import (
 	"testing"
 
 	"github.com/stretchr/testify/require"
+	"go.rtnl.ai/horizon/actions"
 	"go.rtnl.ai/horizon/capabilities"
 	"go.rtnl.ai/horizon/errors"
 	"go.rtnl.ai/horizon/params"
@@ -369,6 +370,19 @@ func TestCapabilitiesArgumentRecovery(t *testing.T) {
 			// Execute recovery; Horizon supplies a result, but does not retry the executor.
 			output, err := runProcessTest(t, context.Background(), inference, runner, &schema.Output{})
 
+			// Local rejection still records a request/result pair without dispatch.
+			request, response := requireCapabilityActionPair(t, output.Actions, "call")
+			require.Equal(t, tt.tool, request.CapabilityRequest.Name)
+			if tt.wantDispatch {
+				require.NotNil(t, response.CapabilityResponse)
+				require.Equal(t, tt.wantResult, response.CapabilityResponse.Content)
+				require.Empty(t, response.Error)
+			} else {
+				// Local rejection is an error event, not an executor result.
+				require.Nil(t, response.CapabilityResponse)
+				require.NotEmpty(t, response.Error)
+			}
+
 			// Assert final-only output and whether the executor ran for this input.
 			require.NoError(t, err)
 			require.Equal(t, "answer", output.Output)
@@ -479,6 +493,35 @@ func TestCapabilitiesExecutorOutcomes(t *testing.T) {
 			// turn, but terminal executor errors stop the loop.
 			output, err := runProcessTest(t, context.Background(), inference, runner, &schema.Output{})
 
+			// Every executor outcome records exactly one response at its boundary.
+			_, response := requireCapabilityActionPair(t, output.Actions, "call")
+			if tt.err != nil {
+				require.Nil(t, response.CapabilityResponse)
+				require.Equal(t, tt.err.Error(), response.Error)
+			} else if tt.response.Kind != capabilities.ResponseKindToolTextContent {
+				require.Nil(t, response.CapabilityResponse)
+				require.NotEmpty(t, response.Error)
+			} else {
+				require.Equal(t, &prompts.ToolResponse{CallID: "call", Content: tt.response.Content}, response.CapabilityResponse)
+				require.Empty(t, response.Error)
+			}
+
+			// Delivery is separate from the outcome: failures may send corrective
+			// feedback, but that feedback is never logged as an executor result.
+			var deliveries []*actions.Action
+			for _, entry := range output.Actions.Entries() {
+				if entry.IsMessage() && entry.CorrelationID == response.CorrelationID {
+					deliveries = append(deliveries, entry)
+				}
+			}
+			if tt.wantTerminal {
+				require.Empty(t, deliveries)
+			} else {
+				require.Len(t, deliveries, 1)
+				require.Less(t, response.Sequence, deliveries[0].Sequence)
+				require.Equal(t, prompts.Prompts{output.Messages()[1]}, deliveries[0].Messages)
+			}
+
 			// Assert diagnostic causes are preserved for terminal errors, never sent to the model.
 			if tt.wantTerminal {
 				require.ErrorIs(t, err, tt.err)
@@ -494,8 +537,34 @@ func TestCapabilitiesExecutorOutcomes(t *testing.T) {
 				require.Len(t, output.Messages(), 3)
 				require.Equal(t, 2, turn, "recoverable outcomes should allow another model turn")
 			}
+
 			require.Equal(t, uint64(1), output.Usage.ToolCalls)
 			runner.CapabilityRunner.AssertCalled(t, mock.ExecuteCapability, 1)
 		})
 	}
+}
+
+// Checks event pairing without relying on adjacent entries: guards and inference
+// events may occur between capability interactions as execution evolves.
+func requireCapabilityActionPair(t *testing.T, log *actions.Actions, callID string) (*actions.Action, *actions.Action) {
+	t.Helper()
+	var requests, responses []*actions.Action
+
+	for _, entry := range log.Entries() {
+		switch entry.Type {
+		case actions.TypeCapabilityRequest:
+			requests = append(requests, entry)
+		case actions.TypeCapabilityResponse:
+			responses = append(responses, entry)
+		}
+	}
+
+	require.Len(t, requests, 1)
+	require.Len(t, responses, 1)
+	require.Equal(t, callID, requests[0].CorrelationID)
+	require.Equal(t, callID, responses[0].CorrelationID)
+	require.Equal(t, actions.EntityRunner, requests[0].Sender)
+	require.Equal(t, actions.EntityCapability, responses[0].Sender)
+	require.Less(t, requests[0].Sequence, responses[0].Sequence)
+	return requests[0], responses[0]
 }

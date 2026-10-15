@@ -11,6 +11,7 @@ import (
 	"go.opentelemetry.io/otel/attribute"
 	"go.opentelemetry.io/otel/codes"
 	"go.opentelemetry.io/otel/trace"
+	"go.rtnl.ai/horizon/actions"
 	"go.rtnl.ai/horizon/attachments"
 	"go.rtnl.ai/horizon/config"
 	"go.rtnl.ai/horizon/errors"
@@ -27,11 +28,13 @@ var tracer = otel.Tracer("go.rtnl.ai/horizon")
 
 // A horizon process executes a horizon task using a runner.
 type process struct {
-	runner     task.Runner
-	task       *task.Task
-	input      *task.Input
-	request    *provider.Request
-	messages   prompts.Prompts // Raw, authoritative conversation history, including reasoning.
+	runner  task.Runner
+	task    *task.Task
+	input   *task.Input
+	request *provider.Request
+	// NOTE: Do not append to messages, call process.appendMessages so that
+	// the transcript is kept in sync with output actions log.
+	messages   prompts.Prompts
 	provider   provider.Provider
 	horizon    *Horizon
 	output     *task.Output
@@ -82,7 +85,7 @@ func (p *process) Run(ctx context.Context) (output *task.Output, err error) {
 	}
 
 	// Record the start time.
-	p.output = &task.Output{Started: time.Now()}
+	p.output = &task.Output{Started: time.Now(), Actions: actions.New()}
 
 	defer func() {
 		// Step 6: Finalize the runner after the execution path completes.
@@ -142,13 +145,16 @@ func (p *process) Run(ctx context.Context) (output *task.Output, err error) {
 		return p.output, fmt.Errorf("process task attachments: %w", err)
 	}
 
-	// Step 3: Render task prompts into the provider request.
+	// Step 3: Render task prompts into the provider request, ensure we have at
+	// least one user message for attachments, and append initial messages to
+	// the actions log.
 	err = cancelAndTrace(ctx, "task.render", p.Render)
 	p.messages = p.request.Input
 	if err != nil {
 		return p.output, fmt.Errorf("render task prompts: %w", err)
 	}
 	p.ensureAttachmentMessage()
+	p.output.Actions.AddMessage(ctx, actions.EntityUser, actions.EntityRunner, p.messages, actions.WithAttachments(p.request.Attachments...))
 
 	// Step 4: Generate once, or execute capabilities until a final answer arrives.
 	generate := func(ctx context.Context) error {
@@ -287,6 +293,12 @@ func cancelAndTrace(ctx context.Context, name string, fn func(context.Context) e
 	span.End()
 
 	return errors.Join(err, ctx.Err())
+}
+
+// appendMessages keeps the live transcript and action-log message entries in sync.
+func (p *process) appendMessages(ctx context.Context, sender, receiver actions.Entity, messages prompts.Prompts, options ...actions.Option) {
+	p.output.Actions.AddMessage(ctx, sender, receiver, messages, options...)
+	p.messages = append(p.messages, messages...)
 }
 
 // Checks for an existing user message; if none exists, supplies a default one

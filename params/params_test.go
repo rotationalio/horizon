@@ -9,6 +9,23 @@ import (
 	"go.rtnl.ai/horizon/params"
 )
 
+// Provider requests in action logs decode parameters into newly allocated zero
+// values. Nonempty parameter objects must initialize their map before setting keys.
+func TestUnmarshalZeroValue(t *testing.T) {
+	originalJSON := `{"temperature":0.5,"max_tokens":12}`
+	var parameters params.Params
+	require.NoError(t, json.Unmarshal([]byte(originalJSON), &parameters))
+	value, ok := parameters.Float("temperature")
+	require.True(t, ok)
+	require.Equal(t, 0.5, value)
+	tokens, ok := parameters.Int("max_tokens")
+	require.True(t, ok)
+	require.Equal(t, int64(12), tokens)
+	data, err := json.Marshal(&parameters)
+	require.NoError(t, err)
+	require.JSONEq(t, originalJSON, string(data))
+}
+
 // Verifies cloned parameter maps can be changed without mutating the original.
 func TestClone(t *testing.T) {
 	t.Run("independent map", func(t *testing.T) {

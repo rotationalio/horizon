@@ -90,14 +90,6 @@ Horizon reads these settings from `HORIZON_*` environment variables when configu
 | `HTTPClientTimeout`          | `HORIZON_HTTP_CLIENT_TIMEOUT`           | `768s`              | Maximum time for generic Horizon HTTP requests, separate from inference request timeouts. Must be positive.        |
 | `BestEffortParsing`          | `HORIZON_BEST_EFFORT_PARSING`           | `false`             | When `true`, Horizon attempts to extract JSON from surrounding text and trims whitespace from other parsed output. |
 
-`output.Messages()` returns the full recorded conversation as `prompts.Prompts`. Filter the returned prompts directly without changing the action log:
-
-```go
-messages := output.Messages().
-    FilterOutTypes(prompts.TypeReasoning).
-    FilterOutRoles(prompts.RoleDeveloper)
-```
-
 The timeout settings cover different scopes: `ExecutionTimeout` bounds the whole task, `ProviderRequestTimeout` bounds each inference call, and `FinalizeTimeout` bounds runner cleanup. `HTTPClientTimeout` applies to other Horizon HTTP operations.
 
 ## 1. Build a runner
@@ -391,9 +383,17 @@ func runSummary(ctx context.Context, h *horizon.Horizon, providerConfig provider
 
 `Run` returns a `*task.Output` and an error. The output includes the parsed or raw `Output`, provider `Model`, transcript via `Messages()`, usage, timing, and outcome. A partial output may still be returned alongside an error.
 
-### Actions log
+### Actions log and messages
 
-Each task output includes an `Actions` log for debugging the run. Use `output.Actions.Entries()` to inspect requests, responses, guard decisions, and messages, or `output.Messages()` for just the conversation. See the [actions package docs](actions/docs.go) for examples and details.
+Each task output includes an `Actions` log for debugging the run. Use `output.Actions.Entries()` to inspect requests, responses, guard decisions, and messages, or `output.Messages()` for just the conversation. Filter the returned prompts directly without changing the action log:
+
+```go
+messages := output.Messages().
+    FilterOutTypes(prompts.TypeReasoning).
+    FilterOutRoles(prompts.RoleDeveloper)
+```
+
+See the [actions package docs](actions/docs.go) for more examples and details.
 
 ### Tool calling: configure and execute capabilities
 

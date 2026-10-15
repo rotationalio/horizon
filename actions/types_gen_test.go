@@ -8,7 +8,7 @@ import (
 
 func TestType(t *testing.T) {
 	suite := enumify.TestSuite[Type, []string]{
-		Values: []Type{TypeUnknown, TypeMessage, TypeGenerationRequest, TypeGenerationResponse, TypeCapabilityRequest, TypeCapabilityResponse, TypeInputGuard, TypeOutputGuard, TypeError},
+		Values: []Type{TypeUnknown, TypeError, TypeMessage, TypeGenerationRequest, TypeGenerationResponse, TypeCapabilityRequest, TypeCapabilityResponse, TypeInputGuard, TypeOutputGuard},
 		Names:  typeNames,
 		ICase:  true,
 		ISpace: true,

@@ -8,6 +8,7 @@ type Type uint8
 
 const (
 	TypeUnknown Type = iota
+	TypeError        // TypeError records a diagnostic about the action log itself.
 	TypeMessage
 	TypeGenerationRequest
 	TypeGenerationResponse
@@ -16,15 +17,13 @@ const (
 	TypeInputGuard
 	TypeOutputGuard
 
-	// TypeError records a diagnostic about the action log itself.
-	TypeError
-
 	// TODO: record webhook callbacks/retries, async queue and worker handoffs, and
 	// task-to-task messages when those execution paths are implemented.
 )
 
 var typeNames = []string{
 	"unknown",
+	"error",
 	"message",
 	"generation_request",
 	"generation_response",
@@ -32,5 +31,4 @@ var typeNames = []string{
 	"capability_response",
 	"input_guard",
 	"output_guard",
-	"error",
 }

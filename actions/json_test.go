@@ -136,6 +136,16 @@ func TestEmptyLogJSON(t *testing.T) {
 	require.True(t, decoded.IsZero())
 }
 
+// A nil log encodes as null but cannot receive decoded entries.
+func TestNilLogJSON(t *testing.T) {
+	var log *actions.Actions
+	// Call directly because encoding/json handles nil pointers without calling methods.
+	data, err := log.MarshalJSON()
+	require.NoError(t, err)
+	require.JSONEq(t, `null`, string(data))
+	require.EqualError(t, log.UnmarshalJSON([]byte(`[]`)), "cannot decode into a nil action log")
+}
+
 // A bad action must not prevent task output or neighboring actions from being
 // returned. Only the encoded entry changes; in-memory history stays unchanged.
 func TestEncodingFallback(t *testing.T) {

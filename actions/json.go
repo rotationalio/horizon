@@ -21,13 +21,13 @@ func (a *Actions) MarshalJSON() ([]byte, error) {
 		return []byte("[]"), nil
 	}
 
-	encoded := make([]json.RawMessage, len(entries))
+	encoded := make([]any, len(entries))
 	for i, event := range entries {
 		data, err := json.Marshal(event)
 		if err != nil {
 			// Replace only this entry. Use fresh metadata so even an invalid
 			// original timestamp cannot prevent the diagnostic from encoding.
-			data, err = json.Marshal(&Action{
+			encoded[i] = &Action{
 				Sequence:      event.Sequence,
 				CorrelationID: event.CorrelationID,
 				Timestamp:     time.Now().UTC(),
@@ -36,12 +36,10 @@ func (a *Actions) MarshalJSON() ([]byte, error) {
 				Receiver:      EntitySystem,
 				Detail:        fmt.Sprintf("could not encode %s action", event.Type),
 				Error:         fmt.Sprintf("error encoding action: %v", err),
-			})
-			if err != nil {
-				return nil, err
 			}
+			continue
 		}
-		encoded[i] = data
+		encoded[i] = json.RawMessage(data)
 	}
 
 	return json.Marshal(encoded)

@@ -145,16 +145,14 @@ func (p *process) Run(ctx context.Context) (output *task.Output, err error) {
 		return p.output, fmt.Errorf("process task attachments: %w", err)
 	}
 
-	// Step 3: Render task prompts into the provider request, ensure we have at
-	// least one user message for attachments, and append initial messages to
-	// the actions log.
+	// Step 3: Render task prompts into the provider request and ensure we have
+	// at least one user message for attachments.
 	err = cancelAndTrace(ctx, "task.render", p.Render)
 	p.messages = p.request.Input
 	if err != nil {
 		return p.output, fmt.Errorf("render task prompts: %w", err)
 	}
-	p.ensureAttachmentMessage()
-	p.output.Actions.AddMessage(ctx, actions.EntityUser, actions.EntityRunner, p.messages, actions.WithAttachments(p.request.Attachments...))
+	p.ensureAttachmentMessage(ctx)
 
 	// Step 4: Generate once, or execute capabilities until a final answer arrives.
 	generate := func(ctx context.Context) error {
@@ -303,7 +301,7 @@ func (p *process) appendMessages(ctx context.Context, sender, receiver actions.E
 
 // Checks for an existing user message; if none exists, supplies a default one
 // for attachment-only input.
-func (p *process) ensureAttachmentMessage() {
+func (p *process) ensureAttachmentMessage(ctx context.Context) {
 	if len(p.request.Attachments) == 0 {
 		return
 	}
@@ -314,9 +312,9 @@ func (p *process) ensureAttachmentMessage() {
 		}
 	}
 
-	p.messages = append(p.messages, &prompts.Prompt{
+	p.appendMessages(ctx, actions.EntitySystem, actions.EntityUser, prompts.Prompts{&prompts.Prompt{
 		Role:    prompts.RoleUser,
 		Type:    prompts.TypeMessage,
 		Content: "This message contains only attachments.",
-	})
+	}})
 }

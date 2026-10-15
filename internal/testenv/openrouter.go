@@ -25,6 +25,12 @@ var defaultOpenRouterMultimodalModels = []string{
 	"openai/gpt-4.1-mini",
 }
 
+// Lower cost models that support image output.
+var defaultOpenRouterImageModels = []string{
+	"openai/gpt-5-image-mini",
+	"microsoft/mai-image-2.6-flash",
+}
+
 // OpenRouterTextModels returns configured models or the default text models.
 func OpenRouterTextModels(t testing.TB) []string {
 	t.Helper()
@@ -35,6 +41,12 @@ func OpenRouterTextModels(t testing.TB) []string {
 func OpenRouterMultimodalModels(t testing.TB) []string {
 	t.Helper()
 	return openRouterModels(t, "OPENROUTER_MULTIMODAL_MODELS", defaultOpenRouterMultimodalModels)
+}
+
+// OpenRouterImageModels returns configured models or the default image models.
+func OpenRouterImageGenerationModels(t testing.TB) []string {
+	t.Helper()
+	return openRouterModels(t, "OPENROUTER_IMAGE_GENERATION_MODELS", defaultOpenRouterImageModels)
 }
 
 // Returns configured models from the environment variable, or the default

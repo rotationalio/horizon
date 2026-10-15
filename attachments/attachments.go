@@ -8,9 +8,15 @@ import (
 	"strings"
 
 	"go.rtnl.ai/horizon/config"
+	"go.rtnl.ai/horizon/errors"
 	"go.rtnl.ai/horizon/http"
 	"go.rtnl.ai/ulid"
 	"go.rtnl.ai/x/mime"
+)
+
+const (
+	uriDataPrefix = "data:"
+	uriBase64     = ";base64,"
 )
 
 type Attachments []*Attachment
@@ -117,7 +123,28 @@ func (a *Attachment) Base64URI(ctx context.Context) (string, error) {
 	if err != nil {
 		return "", err
 	}
-	return "data:" + contentType + ";base64," + base64.StdEncoding.EncodeToString(a.Data), nil
+	return uriDataPrefix + contentType + uriBase64 + base64.StdEncoding.EncodeToString(a.Data), nil
+}
+
+// Parse an attachment from a base64-encoded data URI.
+func ParseBase64URI(uri string) (attachment *Attachment, err error) {
+	if !strings.HasPrefix(uri, uriDataPrefix) {
+		return nil, errors.ErrInvalidDataURI
+	}
+
+	parts := strings.SplitN(uri[len(uriDataPrefix):], uriBase64, 2)
+	if len(parts) != 2 {
+		return nil, errors.ErrInvalidDataURI
+	}
+
+	attachment = &Attachment{
+		ContentType: parts[0],
+	}
+
+	if attachment.Data, err = base64.StdEncoding.DecodeString(parts[1]); err != nil {
+		return nil, err
+	}
+	return attachment, nil
 }
 
 // Resolves the explicit content type or infers one from the filename or bytes.

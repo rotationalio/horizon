@@ -26,6 +26,67 @@ func TestUnmarshalZeroValue(t *testing.T) {
 	require.JSONEq(t, originalJSON, string(data))
 }
 
+// TestZeroValueAndJSONUnmarshal covers zero-value use and JSON decoding semantics.
+func TestZeroValueAndJSONUnmarshal(t *testing.T) {
+	t.Run("Set initializes a zero-value Params", func(t *testing.T) {
+		var parameters params.Params
+		parameters.Set("maxTokens", 12)
+
+		value, ok := parameters.Int("max_tokens")
+		require.True(t, ok)
+		require.Equal(t, int64(12), value)
+	})
+
+	t.Run("decoded objects replace existing parameters", func(t *testing.T) {
+		parameters := params.New(map[string]any{"old_key": true, "temperature": 0.2})
+
+		require.NoError(t, json.Unmarshal([]byte(`{"maxTokens":12}`), parameters))
+		_, ok := parameters.Get("old_key")
+		require.False(t, ok)
+		_, ok = parameters.Get("temperature")
+		require.False(t, ok)
+		value, ok := parameters.Int("max_tokens")
+		require.True(t, ok)
+		require.Equal(t, int64(12), value)
+	})
+
+	t.Run("invalid input preserves existing parameters", func(t *testing.T) {
+		for _, tc := range []struct {
+			name  string
+			input string
+		}{
+			{name: "malformed JSON", input: `{"new_key":`},
+			{name: "non-object JSON", input: `42`},
+		} {
+			t.Run(tc.name, func(t *testing.T) {
+				parameters := params.New(map[string]any{"existing_key": true})
+				require.Error(t, json.Unmarshal([]byte(tc.input), parameters))
+
+				value, ok := parameters.Get("existing_key")
+				require.True(t, ok)
+				require.Equal(t, true, value)
+				_, ok = parameters.Get("new_key")
+				require.False(t, ok)
+			})
+		}
+	})
+
+	t.Run("null clears parameters and Set can initialize them again", func(t *testing.T) {
+		parameters := params.New(map[string]any{"existing_key": true})
+
+		require.NoError(t, json.Unmarshal([]byte(`null`), parameters))
+		require.Zero(t, parameters.Len())
+
+		parameters.Set("new_key", true)
+		require.Equal(t, 1, parameters.Len())
+	})
+
+	t.Run("nil receiver returns an error", func(t *testing.T) {
+		var parameters *params.Params
+		require.EqualError(t, parameters.UnmarshalJSON([]byte(`{}`)), "params: UnmarshalJSON called on nil receiver")
+	})
+}
+
 // Verifies cloned parameter maps can be changed without mutating the original.
 func TestClone(t *testing.T) {
 	t.Run("independent map", func(t *testing.T) {

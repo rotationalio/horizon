@@ -62,6 +62,9 @@ func (p *Params) ProviderOnly() *Params {
 
 // Set a key-value pair in the params map, normalizing the key before storing it.
 func (p *Params) Set(key string, value any) {
+	if p.params == nil {
+		p.params = make(map[string]any)
+	}
 	p.params[normalize(key)] = value
 }
 
@@ -233,19 +236,25 @@ func (p *Params) MarshalJSON() ([]byte, error) {
 	return json.Marshal(p.params)
 }
 
+// UnmarshalJSON replaces the parameters with the decoded object.
+// Invalid input leaves the existing parameters unchanged.
 func (p *Params) UnmarshalJSON(data []byte) error {
+	if p == nil {
+		return fmt.Errorf("params: UnmarshalJSON called on nil receiver")
+	}
+
 	var obj map[string]any
 	if err := json.Unmarshal(data, &obj); err != nil {
 		return err
 	}
 
-	if p.params == nil {
-		p.params = make(map[string]any, len(obj))
+	// JSON null clears the parameters. Set can initialize the map again.
+	if obj == nil {
+		p.params = nil
+		return nil
 	}
 
-	for key, value := range obj {
-		p.Set(key, value)
-	}
-
+	normalized := New(obj)
+	p.params = normalized.params
 	return nil
 }

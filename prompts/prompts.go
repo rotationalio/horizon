@@ -33,15 +33,7 @@ func (p *Prompt) Clone() *Prompt {
 	cloned.ToolCalls = slices.Clone(p.ToolCalls)
 	cloned.ToolResults = slices.Clone(p.ToolResults)
 
-	// Recursively clone the Meta map, preserving nil entries and order.
-	// Stdlib maps.Clone will only clone the map's keys and values, not the
-	// values themselves.
-	if p.Meta != nil {
-		cloned.Meta = make(map[string]any, len(p.Meta))
-		for key, value := range p.Meta {
-			cloned.Meta[key] = cloneMetaValue(value)
-		}
-	}
+	cloned.Meta = CloneMeta(p.Meta)
 	return &cloned
 }
 
@@ -54,6 +46,20 @@ func (p Prompts) Clone() Prompts {
 	cloned := make(Prompts, len(p))
 	for i, prompt := range p {
 		cloned[i] = prompt.Clone()
+	}
+	return cloned
+}
+
+// CloneMeta recursively copies JSON-like metadata containers, preserving nil.
+// Opaque values remain shared.
+func CloneMeta(meta map[string]any) map[string]any {
+	if meta == nil {
+		return nil
+	}
+
+	cloned := make(map[string]any, len(meta))
+	for key, value := range meta {
+		cloned[key] = cloneMetaValue(value)
 	}
 	return cloned
 }

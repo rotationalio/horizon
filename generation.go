@@ -8,6 +8,7 @@ import (
 	"go.opentelemetry.io/otel/attribute"
 	"go.opentelemetry.io/otel/codes"
 	"go.opentelemetry.io/otel/trace"
+	"go.rtnl.ai/horizon/actions"
 	"go.rtnl.ai/horizon/errors"
 	"go.rtnl.ai/horizon/prompts"
 	"go.rtnl.ai/horizon/provider"
@@ -23,9 +24,11 @@ func (p *process) Generate(ctx context.Context) (*provider.Response, error) {
 
 	// Input guards validate a snapshot so that mutations are ignored.
 	if guard, ok := p.runner.(task.InputGuard); ok {
-		if err := cancelAndTrace(ctx, "guard.input", func(context.Context) error {
+		err := cancelAndTrace(ctx, "guard.input", func(context.Context) error {
 			return guard.ProtectInput(p.request.Clone())
-		}); err != nil {
+		})
+		p.output.Actions.AddInputGuard(ctx, err)
+		if err != nil {
 			return nil, fmt.Errorf("protect inference input: %w", err)
 		}
 	}
@@ -34,8 +37,10 @@ func (p *process) Generate(ctx context.Context) (*provider.Response, error) {
 	requestCtx, span := tracer.Start(ctx, "provider.generate")
 	span.SetAttributes(attribute.String("provider.model", p.request.Model))
 
+	correlation := p.output.Actions.AddGenerationRequest(requestCtx, p.request)
 	p.output.Usage.Invocations++
 	response, generateErr := p.provider.Generate(requestCtx, p.request)
+	p.output.Actions.AddGenerationResponse(requestCtx, correlation, response, generateErr)
 
 	responseAttributes := []attribute.KeyValue{attribute.Bool("provider.response_present", response != nil)}
 	if response != nil {
@@ -70,11 +75,13 @@ func (p *process) Generate(ctx context.Context) (*provider.Response, error) {
 	}
 
 	if response != nil {
-		// Run the output guard before capturing the response if implemented.
+		// Output guards only accept or reject; mutations to their snapshot are ignored.
 		if guard, ok := p.runner.(task.OutputGuard); ok {
-			if err := cancelAndTrace(ctx, "guard.output", func(context.Context) error {
-				return guard.ProtectOutput(response)
-			}); err != nil {
+			err := cancelAndTrace(ctx, "guard.output", func(context.Context) error {
+				return guard.ProtectOutput(response.Clone())
+			})
+			p.output.Actions.AddOutputGuard(ctx, correlation, err, actions.WithAttachments(response.Attachments...))
+			if err != nil {
 				return nil, errors.Join(generateErr, fmt.Errorf("protect inference output: %w", err))
 			}
 		}
@@ -85,7 +92,8 @@ func (p *process) Generate(ctx context.Context) (*provider.Response, error) {
 		}
 		p.output.Model = task.Model{Slug: model, Parameters: p.task.Model.Parameters}
 		p.output.Attachments = append(p.output.Attachments, response.Attachments...)
-		p.messages = append(p.messages, response.Output...)
+		p.appendMessages(ctx, actions.EntityModel, actions.EntityRunner, response.Output,
+			actions.WithCorrelation(correlation), actions.WithAttachments(response.Attachments...))
 		return response, generateErr
 	}
 

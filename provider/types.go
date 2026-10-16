@@ -53,6 +53,21 @@ type Response struct {
 	Meta        Meta
 }
 
+// Clone returns a response snapshot with independent prompts and attachments.
+// Metadata uses the same cloning rules as prompt metadata: JSON-shaped containers
+// are copied recursively; opaque values retain their existing ownership rules.
+func (r *Response) Clone() *Response {
+	if r == nil {
+		return nil
+	}
+
+	cloned := *r
+	cloned.Output = r.Output.Clone()
+	cloned.Attachments = r.Attachments.Clone()
+	cloned.Meta = Meta(prompts.CloneMeta(r.Meta))
+	return &cloned
+}
+
 // Stores supplemental key-value data attached to provider responses and output
 // prompts.
 type Meta map[string]any

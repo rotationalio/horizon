@@ -10,6 +10,7 @@ import (
 	"go.opentelemetry.io/otel/attribute"
 	"go.opentelemetry.io/otel/codes"
 	"go.opentelemetry.io/otel/trace"
+	"go.rtnl.ai/horizon/actions"
 	"go.rtnl.ai/horizon/capabilities"
 	"go.rtnl.ai/horizon/errors"
 	"go.rtnl.ai/horizon/prompts"
@@ -229,18 +230,15 @@ func (p *process) executeCapability(ctx context.Context, execution *capabilityEx
 		return err
 	}
 
+	// Record the attempted dispatch; each outcome below records its own result.
+	p.output.Actions.AddCapabilityRequest(ctx, call)
+
 	// Reject unadvertised names, allowing the model to fix.
 	name := capabilities.Name(call.Name)
 	if _, ok := execution.advertised[name]; !ok {
 		span.AddEvent("capabilities.invalid_capability", trace.WithAttributes(attribute.String("capabilities_name", call.Name)))
-		p.messages = append(p.messages, &prompts.Prompt{
-			Role: prompts.RoleTool,
-			Type: prompts.TypeMessage,
-			ToolResults: []prompts.ToolResponse{{
-				CallID:  call.CallID,
-				Content: "The requested capability is unavailable. Choose an advertised capability.",
-			}},
-		})
+		p.output.Actions.AddCapabilityResponse(ctx, call.CallID, nil, capabilities.ErrNotFound)
+		p.appendCapabilityFeedback(ctx, call.CallID, "The requested capability is unavailable. Choose an advertised capability.")
 		return nil
 	}
 
@@ -255,14 +253,8 @@ func (p *process) executeCapability(ctx context.Context, execution *capabilityEx
 			attribute.String("capabilities_name", call.Name),
 			attribute.String("arguments_error", argumentErr.Error()),
 		))
-		p.messages = append(p.messages, &prompts.Prompt{
-			Role: prompts.RoleTool,
-			Type: prompts.TypeMessage,
-			ToolResults: []prompts.ToolResponse{{
-				CallID:  call.CallID,
-				Content: "Arguments must be one valid JSON object. Correct them and try again.",
-			}},
-		})
+		p.output.Actions.AddCapabilityResponse(ctx, call.CallID, nil, argumentErr)
+		p.appendCapabilityFeedback(ctx, call.CallID, "Arguments must be one valid JSON object. Correct them and try again.")
 		return nil
 	}
 
@@ -274,17 +266,20 @@ func (p *process) executeCapability(ctx context.Context, execution *capabilityEx
 		Arguments: arguments,
 	})
 
-	// Check for cancellation after long-running tool calls.
+	// Record cancelled delivery without contributing a tool result to the model.
 	if err := ctx.Err(); err != nil {
+		p.output.Actions.AddCapabilityResponse(ctx, call.CallID, nil, err)
 		return err
 	}
 
 	// Retryable failures let the model correct its next request; terminal
 	// errors stop.
 	if executionErr != nil {
+		p.output.Actions.AddCapabilityResponse(ctx, call.CallID, nil, executionErr)
 		if !executionErr.Retryable {
 			return fmt.Errorf("execute capability %q: %w", name, executionErr)
 		}
+
 		retryAttributes := []attribute.KeyValue{
 			attribute.String("message", executionErr.Message),
 		}
@@ -295,14 +290,7 @@ func (p *process) executeCapability(ctx context.Context, execution *capabilityEx
 			)
 		}
 		span.AddEvent("capabilities.retryable_failure", trace.WithAttributes(retryAttributes...))
-		p.messages = append(p.messages, &prompts.Prompt{
-			Role: prompts.RoleTool,
-			Type: prompts.TypeMessage,
-			ToolResults: []prompts.ToolResponse{{
-				CallID:  call.CallID,
-				Content: executionErr.Message,
-			}},
-		})
+		p.appendCapabilityFeedback(ctx, call.CallID, executionErr.Message)
 		return nil
 	}
 
@@ -310,17 +298,26 @@ func (p *process) executeCapability(ctx context.Context, execution *capabilityEx
 	// become a safe result so the model can decide how to continue.
 	messages, err := response.Process(call.CallID)
 	if err != nil {
-		p.messages = append(p.messages, &prompts.Prompt{
-			Role: prompts.RoleTool,
-			Type: prompts.TypeMessage,
-			ToolResults: []prompts.ToolResponse{{
-				CallID:  call.CallID,
-				Content: "The capability returned an unsupported result.",
-			}},
-		})
+		p.output.Actions.AddCapabilityResponse(ctx, call.CallID, nil, err)
+		p.appendCapabilityFeedback(ctx, call.CallID, "The capability returned an unsupported result.")
 		return nil
 	}
 
-	p.messages = append(p.messages, messages...)
+	// Record the first tool result as the capability response; Process should
+	// only ever return a single message with a single tool result.
+	// TODO: Update this single-result assumption and action payload when multimodal tool results are supported.
+	p.output.Actions.AddCapabilityResponse(ctx, call.CallID, &messages[0].ToolResults[0], nil)
+	p.appendMessages(ctx, actions.EntityCapability, actions.EntityModel, messages, actions.WithCorrelation(call.CallID))
 	return nil
+}
+
+// appendCapabilityFeedback delivers a corrective tool message to the model and
+// records it in the actions log.
+func (p *process) appendCapabilityFeedback(ctx context.Context, callID, content string) {
+	messages := prompts.Prompts{{
+		Role:        prompts.RoleTool,
+		Type:        prompts.TypeMessage,
+		ToolResults: []prompts.ToolResponse{{CallID: callID, Content: content}},
+	}}
+	p.appendMessages(ctx, actions.EntityCapability, actions.EntityModel, messages, actions.WithCorrelation(callID))
 }

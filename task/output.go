@@ -3,9 +3,9 @@ package task
 import (
 	"time"
 
+	"go.rtnl.ai/horizon/actions"
 	"go.rtnl.ai/horizon/attachments"
 	"go.rtnl.ai/horizon/capabilities"
-	"go.rtnl.ai/horizon/http"
 	"go.rtnl.ai/horizon/prompts"
 	"go.rtnl.ai/x/mime"
 )
@@ -22,15 +22,22 @@ const (
 type Output struct {
 	Usage        Usage               `json:"usage"`
 	Model        Model               `json:"model"`
-	Output       any                 `json:"output,omitempty"`   // Final or partial model output; Run may return it with an error.
-	Messages     prompts.Prompts     `json:"messages,omitempty"` // Ordered conversation history, excluding reasoning and unknown types.
+	Output       any                 `json:"output,omitempty"` // Final or partial model output; Run may return it with an error.
 	MimeType     mime.Type           `json:"mime_type"`
 	Capabilities []capabilities.Name `json:"capabilities"`
-	Actions      Actions             `json:"actions,omitempty"`
+	Actions      *actions.Actions    `json:"actions,omitempty,omitzero"` // Log of important actions.
 	Started      time.Time           `json:"started"`
 	Finished     time.Time           `json:"finished"`
 	Outcome      Outcome             `json:"outcome"`
 	Attachments  attachments.Attachments
+}
+
+// Messages returns the conversation view of the execution's action log.
+func (o *Output) Messages() prompts.Prompts {
+	if o == nil {
+		return nil
+	}
+	return o.Actions.Messages()
 }
 
 // Usage is the model and capability usage information for a task execution.
@@ -50,21 +57,4 @@ func (o *Output) Latency() time.Duration {
 		return 0
 	}
 	return o.Finished.Sub(o.Started)
-}
-
-//============================================================================
-// Actions Log Definition
-//============================================================================
-
-// A collection of [Action]s taken during a task execution.
-type Actions []*Action
-
-// An action is a single action taken during a task execution, such as a message
-// prompt or a capability (tool/resource) call.
-type Action struct {
-	Name   string    `json:"name"`            // The name of the action (e.g. "tool call", "prompt", etc.)
-	Target any       `json:"target"`          // Can be either a *Model or a *Capability
-	Params http.JSON `json:"params"`          // The parameters sent to the target
-	Output http.JSON `json:"output"`          // The output response of the action
-	Usage  *Usage    `json:"usage,omitempty"` // Usage information for the action
 }

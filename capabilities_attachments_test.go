@@ -136,8 +136,8 @@ func TestCapabilitiesProcessedAttachmentOwnership(t *testing.T) {
 	require.NoError(t, err)
 	require.Equal(t, "abc", string(shared.Data))
 	require.Equal(t, "original", string(input.Data))
-	require.Len(t, output.Messages, 4)
-	require.Equal(t, "This message contains only attachments.", output.Messages[0].Content)
+	require.Len(t, output.Messages(), 4)
+	require.Equal(t, "This message contains only attachments.", output.Messages()[0].Content)
 	processor.AssertCalled(t, mock.ProcessAttachment, 1)
 	runner.InputGuard.AssertCalled(t, mock.ProtectInput, 2)
 }

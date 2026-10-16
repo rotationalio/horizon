@@ -12,8 +12,6 @@ import (
 	"go.rtnl.ai/horizon/schema"
 )
 
-type stringAlias string
-
 // Verifies non-empty strings, defined string types, and string pointers are
 // normalized while empty and non-string values are omitted.
 func TestMetaPutString(t *testing.T) {
@@ -110,3 +108,52 @@ func TestRequestClone(t *testing.T) {
 		require.NotSame(t, empty, cloned)
 	})
 }
+
+// Response snapshots isolate guard edits to prompts, attachments, and metadata.
+// Scalar response fields remain unchanged too, including accounting information.
+func TestResponseClone(t *testing.T) {
+	original := &provider.Response{
+		Model: "model", Usage: provider.Usage{TotalTokens: 7},
+		Output: prompts.Prompts{nil, {
+			Content: "answer", Meta: map[string]any{"nested": []any{"original"}},
+			ToolCalls:   []prompts.ToolCall{{CallID: "call", Arguments: `{}`}},
+			ToolResults: []prompts.ToolResponse{{CallID: "prior", Content: "result"}},
+			Citations:   []prompts.Citation{{Title: "source"}},
+		}},
+		Attachments: attachments.Attachments{nil, {Filename: "file", Data: []byte("abc")}},
+		Meta:        provider.Meta{"nested": map[string]any{"value": "original"}},
+	}
+	cloned := original.Clone()
+	require.Equal(t, original, cloned)
+	require.NotSame(t, original, cloned)
+
+	// Mutate every nested container a guard normally inspects.
+	cloned.Model = "changed"
+	cloned.Usage.TotalTokens = 99
+	cloned.Output[1].Content = "changed"
+	cloned.Output[1].Meta["nested"].([]any)[0] = "changed"
+	cloned.Output[1].ToolCalls[0].Arguments = `{"changed":true}`
+	cloned.Output[1].ToolResults[0].Content = "changed"
+	cloned.Output[1].Citations[0].Title = "changed"
+	cloned.Attachments[1].Filename = "changed"
+	cloned.Attachments[1].Data[0] = 'X'
+	cloned.Meta["nested"].(map[string]any)["value"] = "changed"
+
+	require.Equal(t, "model", original.Model)
+	require.Equal(t, int64(7), original.Usage.TotalTokens)
+	require.Equal(t, "answer", original.Output[1].Content)
+	require.Equal(t, "original", original.Output[1].Meta["nested"].([]any)[0])
+	require.Equal(t, `{}`, original.Output[1].ToolCalls[0].Arguments)
+	require.Equal(t, "result", original.Output[1].ToolResults[0].Content)
+	require.Equal(t, "source", original.Output[1].Citations[0].Title)
+	require.Equal(t, "file", original.Attachments[1].Filename)
+	require.Equal(t, "abc", string(original.Attachments[1].Data))
+	require.Equal(t, "original", original.Meta["nested"].(map[string]any)["value"])
+
+	var absent *provider.Response
+	require.Nil(t, absent.Clone())
+	require.Equal(t, &provider.Response{}, (&provider.Response{}).Clone())
+}
+
+// Defined string type used to verify metadata normalization.
+type stringAlias string

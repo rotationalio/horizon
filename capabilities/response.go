@@ -31,7 +31,8 @@ func NewToolTextContentResponse(content string) Response {
 
 // Process converts a contribution into conversation messages correlated to the
 // originating call. The caller supplies a validated call ID; the executor does
-// not control correlation. Unsupported kinds return no messages.
+// not control correlation. Tool text content always produces exactly one message
+// containing exactly one tool result. Unsupported kinds return no messages.
 func (r Response) Process(callID string) (prompts.Prompts, error) {
 	switch r.Kind {
 	case ResponseKindToolTextContent:

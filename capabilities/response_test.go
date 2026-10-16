@@ -42,6 +42,11 @@ func TestResponseProcess(t *testing.T) {
 			valid:    true,
 		},
 		{
+			name:     "multiline text result",
+			response: capabilities.NewToolTextContentResponse("first line\nsecond line"),
+			valid:    true,
+		},
+		{
 			name:     "zero value is invalid",
 			response: capabilities.Response{},
 		},
@@ -64,6 +69,12 @@ func TestResponseProcess(t *testing.T) {
 				return
 			}
 			require.NoError(t, err)
+
+			// Capability execution relies on indexing messages[0].ToolResults[0].
+			// Text content must keep this shape even when empty or multiline.
+			require.Len(t, messages, 1)
+			require.NotNil(t, messages[0])
+			require.Len(t, messages[0].ToolResults, 1)
 			require.Equal(t, prompts.Prompts{{
 				Role:        prompts.RoleTool,
 				Type:        prompts.TypeMessage,

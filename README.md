@@ -77,34 +77,18 @@ The root package aliases common API types with explicit names such as `TaskInput
 
 Horizon reads these settings from `HORIZON_*` environment variables when configuration is first loaded. Defaults apply when a setting is omitted. See [`config/config.go`](config/config.go) for the fields, defaults, and validation rules. Durations use Go duration syntax (for example, `500ms` or `2m`); attachment size limits are in bytes. You can also override settings programmatically with `config.Set`.
 
-| Setting                      | Environment variable                    | Default             | How to interpret it                                                                                                                                            |
-| ---------------------------- | --------------------------------------- | ------------------- | -------------------------------------------------------------------------------------------------------------------------------------------------------------- |
-| `RendererCacheSize`          | `HORIZON_RENDERER_CACHE_SIZE`           | `128`               | Maximum number of compiled template renderers to cache. Must be positive.                                                                                      |
-| `ProviderCacheSize`          | `HORIZON_PROVIDER_CACHE_SIZE`           | `32`                | Maximum number of provider instances to cache. Must be positive.                                                                                               |
-| `MaxToolTurns`               | `HORIZON_MAX_TOOL_TURNS`                | `32`                | Maximum model/tool turns per task. `0` disables tool calling; a task-level `params.MaxToolTurns` can override it.                                              |
-| `AttachmentMaxDownloadBytes` | `HORIZON_ATTACHMENT_MAX_DOWNLOAD_BYTES` | `67108864` (64 MiB) | Maximum size of each remotely downloaded attachment. Must be positive.                                                                                         |
-| `AttachmentDownloadTimeout`  | `HORIZON_ATTACHMENT_DOWNLOAD_TIMEOUT`   | `8s`                | Maximum time to download a remote attachment. Must be positive.                                                                                                |
-| `ExecutionTimeout`           | `HORIZON_EXECUTION_TIMEOUT`             | `0s`                | Maximum time for one whole execution. `0` means the caller's context controls the timeout.                                                                     |
-| `FinalizeTimeout`            | `HORIZON_FINALIZE_TIMEOUT`              | `8s`                | Maximum time allowed for `Runner.Finalize`, after execution. Must be positive.                                                                                 |
-| `ProviderRequestTimeout`     | `HORIZON_PROVIDER_REQUEST_TIMEOUT`      | `128s`              | Maximum time for one individual inference request, not the whole execution. Must be positive.                                                                  |
-| `HTTPClientTimeout`          | `HORIZON_HTTP_CLIENT_TIMEOUT`           | `768s`              | Maximum time for generic Horizon HTTP requests, separate from inference request timeouts. Must be positive.                                                    |
-| `BestEffortParsing`          | `HORIZON_BEST_EFFORT_PARSING`           | `false`             | When `true`, Horizon attempts to extract JSON from surrounding text and trims whitespace from other parsed output.                                             |
-| `FilterOutputMessageTypes`   | `HORIZON_FILTER_OUTPUT_MESSAGE_TYPES`   | empty               | Message types omitted from the returned output transcript; see [`prompts/types.go`](prompts/types.go) for the available values. An empty list filters nothing. |
-| `FilterOutputMessageRoles`   | `HORIZON_FILTER_OUTPUT_MESSAGE_ROLES`   | empty               | Message roles omitted from the returned output transcript; see [`prompts/roles.go`](prompts/roles.go) for the available values. An empty list filters nothing. |
-
-For typed settings such as the message filters, you can configure values directly in Go instead of relying on environment parsing:
-
-```go
-conf, err := config.Get()
-if err != nil {
-    return err
-}
-conf.FilterOutputMessageTypes = []prompts.Type{prompts.TypeReasoning}
-conf.FilterOutputMessageRoles = []prompts.Role{prompts.RoleDeveloper}
-if err := config.Set(conf); err != nil {
-    return err
-}
-```
+| Setting                      | Environment variable                    | Default             | How to interpret it                                                                                                |
+| ---------------------------- | --------------------------------------- | ------------------- | ------------------------------------------------------------------------------------------------------------------ |
+| `RendererCacheSize`          | `HORIZON_RENDERER_CACHE_SIZE`           | `128`               | Maximum number of compiled template renderers to cache. Must be positive.                                          |
+| `ProviderCacheSize`          | `HORIZON_PROVIDER_CACHE_SIZE`           | `32`                | Maximum number of provider instances to cache. Must be positive.                                                   |
+| `MaxToolTurns`               | `HORIZON_MAX_TOOL_TURNS`                | `32`                | Maximum model/tool turns per task. `0` disables tool calling; a task-level `params.MaxToolTurns` can override it.  |
+| `AttachmentMaxDownloadBytes` | `HORIZON_ATTACHMENT_MAX_DOWNLOAD_BYTES` | `67108864` (64 MiB) | Maximum size of each remotely downloaded attachment. Must be positive.                                             |
+| `AttachmentDownloadTimeout`  | `HORIZON_ATTACHMENT_DOWNLOAD_TIMEOUT`   | `8s`                | Maximum time to download a remote attachment. Must be positive.                                                    |
+| `ExecutionTimeout`           | `HORIZON_EXECUTION_TIMEOUT`             | `0s`                | Maximum time for one whole execution. `0` means the caller's context controls the timeout.                         |
+| `FinalizeTimeout`            | `HORIZON_FINALIZE_TIMEOUT`              | `8s`                | Maximum time allowed for `Runner.Finalize`, after execution. Must be positive.                                     |
+| `ProviderRequestTimeout`     | `HORIZON_PROVIDER_REQUEST_TIMEOUT`      | `128s`              | Maximum time for one individual inference request, not the whole execution. Must be positive.                      |
+| `HTTPClientTimeout`          | `HORIZON_HTTP_CLIENT_TIMEOUT`           | `768s`              | Maximum time for generic Horizon HTTP requests, separate from inference request timeouts. Must be positive.        |
+| `BestEffortParsing`          | `HORIZON_BEST_EFFORT_PARSING`           | `false`             | When `true`, Horizon attempts to extract JSON from surrounding text and trims whitespace from other parsed output. |
 
 The timeout settings cover different scopes: `ExecutionTimeout` bounds the whole task, `ProviderRequestTimeout` bounds each inference call, and `FinalizeTimeout` bounds runner cleanup. `HTTPClientTimeout` applies to other Horizon HTTP operations.
 
@@ -397,7 +381,19 @@ func runSummary(ctx context.Context, h *horizon.Horizon, providerConfig provider
 }
 ```
 
-`Run` returns a `*task.Output` and an error. The output includes the parsed or raw `Output`, provider `Model`, transcript `Messages`, usage, timing, and outcome. A partial output may still be returned alongside an error.
+`Run` returns a `*task.Output` and an error. The output includes the parsed or raw `Output`, provider `Model`, transcript via `Messages()`, usage, timing, and outcome. A partial output may still be returned alongside an error.
+
+### Actions log and messages
+
+Each task output includes an `Actions` log for debugging the run. Use `output.Actions.Entries()` to inspect requests, responses, guard decisions, and messages, or `output.Messages()` for just the conversation. Filter the returned prompts directly without changing the action log:
+
+```go
+messages := output.Messages().
+    FilterOutTypes(prompts.TypeReasoning).
+    FilterOutRoles(prompts.RoleDeveloper)
+```
+
+See the [actions package docs](actions/docs.go) for more examples and details.
 
 ### Tool calling: configure and execute capabilities
 

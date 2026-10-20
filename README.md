@@ -123,8 +123,7 @@ func (r *AppRunner) Finalize(_ context.Context, output *task.Output, runErr erro
     return nil
 }
 
-// This factory returns a singleton Runner. You may also implement a RunnerFactory
-// which returns a new runner for every execution.
+// RunnerFactory creates a fresh runner for each HTTP execution.
 type RunnerFactory struct {
     provider provider.Config
 }
@@ -134,16 +133,22 @@ func (f RunnerFactory) NewRunner(context.Context) (task.Runner, error) {
 }
 ```
 
-Pass a factory to `horizon.New` when using the shared Horizon instance. Horizon calls the factory for each execution, so the factory must be safe for concurrent calls and return runners that do not share mutable execution state.
+For direct runs, pass an execution-local runner to `Run`. For routed HTTP tasks, create a handler with a factory that returns a fresh runner for each request and supports concurrent calls.
 
 ```go
-h, err := horizon.New(RunnerFactory{provider: providerConfig})
+h, err := horizon.New()
+if err != nil {
+    return err
+}
+
+runner := &AppRunner{provider: providerConfig}
+output, err := h.Run(ctx, input, taskDefinition, runner)
 if err != nil {
     return err
 }
 ```
 
-For a one-off execution with a runner you already have, use the package-level `horizon.Run` function instead; it does not need a factory or a `Horizon` instance.
+For a one-off execution that does not need the shared provider cache, use the package-level `horizon.Run` function.
 
 ### Optional runner interfaces
 
@@ -225,17 +230,22 @@ flowchart TD
 
 ## 2. Use the handler and router
 
-A `Horizon` exposes an `http.Handler` that decodes input, finds the task by URL path, runs it, and writes the result. The router maps URL-safe absolute paths to task definitions. Insert a route before mounting the handler:
+A handler decodes input, finds the task by URL path, creates an execution-local runner, runs the task, and writes the result. Each handler has an independent router and factory; retain the constructed handler to preserve its routes:
 
 ```go
-router := h.Handler().Router()
-router.Insert("/summarize", summarizeTask)
+handler, err := h.NewHandler(RunnerFactory{provider: providerConfig})
+if err != nil {
+    return err
+}
+handler.Router().Insert("/summarize", summarizeTask)
 
 mux := http.NewServeMux()
-mux.Handle("/", h.Handler())
+mux.Handle("/", handler)
 ```
 
 `Insert` returns `true` when it replaces an existing route. Use `Get(path)` to look one up, `Remove(path)` to remove it, and `Size()` to inspect the route count. Stored task definitions should not be mutated while in use; insert a replacement to update one.
+
+`task.Task.Metadata` is an optional map for application-defined annotations. Horizon preserves it on the execution-local task copy, allowing the `Runner` to access it. This is usually unncessary when running tasks via `Horizon.Run` or `horizon.Run` because the runner is constructed by the application and passed as an argument.
 
 The handler accepts JSON (typically `POST`) or query values (`GET`). Multipart form requests are also accepted for inputs with files. For example:
 
@@ -252,8 +262,13 @@ To mount the same handler in Gin, register the HTTP methods you want to accept a
 
 ```go
 engine := gin.Default()
-engine.GET("/summarize", gin.WrapH(h.Handler()))
-engine.POST("/summarize", gin.WrapH(h.Handler()))
+handler, err := h.NewHandler(RunnerFactory{provider: providerConfig})
+if err != nil {
+    return err
+}
+handler.Router().Insert("/summarize", summarizeTask)
+engine.GET("/summarize", gin.WrapH(handler))
+engine.POST("/summarize", gin.WrapH(handler))
 ```
 
 The Gin route path should match the path inserted into Horizon's router. `gin.WrapH` is provided by `github.com/gin-gonic/gin`; Horizon itself does not require Gin.
@@ -369,7 +384,8 @@ func runSummary(ctx context.Context, h *horizon.Horizon, providerConfig provider
     input := &task.Input{
         Context: prompts.Context{"text": "A short article to summarize."},
     }
-    output, err := h.Run(ctx, input, tsk)
+    runner := &AppRunner{provider: providerConfig}
+    output, err := h.Run(ctx, input, tsk, runner)
     if err != nil {
         return "", err
     }

@@ -1,6 +1,6 @@
 module go.rtnl.ai/horizon
 
-go 1.26.5
+go 1.26.10
 
 require (
 	github.com/cespare/xxhash/v2 v2.3.0

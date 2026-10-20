@@ -22,7 +22,6 @@ type Tasks []Task
 // A single, independent unit of work that can be executed, including all of the
 // necessary inputs, outputs, clients, capabilities, and other configuration.
 type Task struct {
-	// Task Definition
 	ID           ulid.ULID           `json:"id,omitempty" yaml:"id,omitempty" msg:"id,omitempty"`                               // The ID of the task
 	Slug         string              `json:"slug" yaml:"slug" msg:"slug"`                                                       // The slug of the task
 	Name         string              `json:"name" yaml:"name" msg:"name"`                                                       // The name of the task
@@ -33,6 +32,7 @@ type Task struct {
 	Model        Model               `json:"model" yaml:"model" msg:"model"`                                                    // The Model used for the task
 	Prompts      templates.Templates `json:"prompts" yaml:"prompts" msg:"prompts"`                                              // The prompts used for the task
 	Capabilities []capabilities.Name `json:"capabilities,omitempty" yaml:"capabilities,omitempty" msg:"capabilities,omitempty"` // The capabilities enabled for the task
+	Metadata     map[string]string   `json:"metadata,omitempty" yaml:"metadata,omitempty" msg:"metadata,omitempty"`             // Application-specific metadata for the task
 
 	// Task Execution Configuration
 	Provider *provider.Config `json:"provider,omitempty" yaml:"provider,omitempty" msg:"provider,omitempty"` // The inference provider used for the task
@@ -52,6 +52,12 @@ func (t *Task) Clone() *Task {
 	}
 	cloned := *t
 	cloned.Capabilities = slices.Clone(t.Capabilities)
+	if t.Metadata != nil {
+		cloned.Metadata = make(map[string]string, len(t.Metadata))
+		for key, value := range t.Metadata {
+			cloned.Metadata[key] = value
+		}
+	}
 	cloned.Model.Parameters = t.Model.Parameters.Clone()
 	if t.Provider != nil {
 		config := *t.Provider

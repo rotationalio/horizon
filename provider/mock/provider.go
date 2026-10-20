@@ -13,6 +13,7 @@ import (
 )
 
 const (
+	Status            = "Status"
 	Generate          = "Generate"
 	FetchCatalog      = "FetchCatalog"
 	RetrieveModel     = "RetrieveModel"
@@ -24,6 +25,7 @@ const (
 type MockProvider struct {
 	id ulid.ULID
 	mock.Mock
+	OnStatus            func(ctx context.Context) (provider.Status, error)
 	OnGenerate          func(ctx context.Context, req *provider.Request) (*provider.Response, error)
 	OnFetchCatalog      func(ctx context.Context) ([]catalog.Model, error)
 	OnRetrieveModel     func(ctx context.Context, modelID string) (*catalog.Model, error)
@@ -61,6 +63,14 @@ func New(id ulid.ULID) *MockProvider {
 // ID returns the provider configuration ID.
 func (m *MockProvider) ID() ulid.ULID {
 	return m.id
+}
+
+func (m *MockProvider) Status(ctx context.Context) (provider.Status, error) {
+	m.Call(Status)
+	if m.OnStatus != nil {
+		return m.OnStatus(ctx)
+	}
+	panic(errors.Fmt("%s callback is not mocked", Status))
 }
 
 func (m *MockProvider) Generate(ctx context.Context, req *provider.Request) (*provider.Response, error) {

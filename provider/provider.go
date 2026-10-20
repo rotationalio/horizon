@@ -75,6 +75,9 @@ type Provider interface {
 	// Returns the application-assigned ID of this provider configuration.
 	ID() ulid.ULID
 
+	// Returns the connection status of the provider.
+	Status(ctx context.Context) (Status, error)
+
 	// Returns a list of all [catalog.Model] from the provider's catalog.
 	FetchCatalog(ctx context.Context) ([]catalog.Model, error)
 

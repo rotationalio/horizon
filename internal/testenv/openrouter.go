@@ -11,7 +11,8 @@ import (
 // low-cost models is the easiest way to avoid rate limiting and unstable free
 // inference providers.
 var defaultOpenRouterTextModels = []string{
-	"~google/gemini-flash-latest",
+	"google/gemini-3.1-flash-lite",
+	"google/gemini-3.5-flash",
 	"openai/gpt-4.1-mini",
 }
 
@@ -19,7 +20,8 @@ var defaultOpenRouterTextModels = []string{
 // calling. Using very low-cost models is the easiest way to avoid rate limiting
 // and unstable free inference providers.
 var defaultOpenRouterMultimodalModels = []string{
-	"~google/gemini-flash-latest",
+	"google/gemini-3.1-flash-lite",
+	"google/gemini-3.5-flash",
 	"openai/gpt-4.1-mini",
 }
 

@@ -23,9 +23,8 @@ import (
 
 // ConnectivityModel is the model used for provider connectivity checks.
 //
-// TODO: figure out a better way to do this than a hardcoded model slug; for
-// now it's set to the "latest" gemini flash model which is cheap and reliable.
-const ConnectivityModel = "~google/gemini-flash-latest"
+// TODO: figure out a better way to do this than a hardcoded model slug.
+const ConnectivityModel = "google/gemini-3.1-flash-lite"
 
 // CatalogClient fetches model metadata from the OpenRouter models API.
 // See https://openrouter.ai/docs/api/api-reference/models/get-models

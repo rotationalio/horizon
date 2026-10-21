@@ -507,6 +507,48 @@ func TestNullModality_ToModality(t *testing.T) {
 	})
 }
 
+func TestFromContentType(t *testing.T) {
+	t.Run("Valid", func(t *testing.T) {
+		testCases := []struct {
+			contentType string
+			expected    Modality
+		}{
+			{contentType: "text/plain", expected: Text},
+			{contentType: "image/png", expected: Image},
+			{contentType: "audio/mpeg", expected: Audio},
+			{contentType: "video/mp4", expected: Video},
+			{contentType: "application/json", expected: Text},
+			{contentType: "application/mp4", expected: Video},
+			{contentType: "application/toml", expected: Text},
+			{contentType: "application/xml", expected: Text | Document},
+			{contentType: "application/yaml", expected: Text},
+			{contentType: "application/pdf", expected: Document},
+			{contentType: "multipart/form-data", expected: Document},
+		}
+
+		for i, tc := range testCases {
+			m, err := FromContentType(tc.contentType)
+			require.NoError(t, err, "expected error but got none for contentType %q", tc.contentType)
+			require.Equal(t, tc.expected, m, "test case %d: expected %q but got %q", i, tc.expected.String(), m.String())
+		}
+	})
+
+	t.Run("Invalid", func(t *testing.T) {
+		testCases := []struct {
+			contentType string
+		}{
+			{},
+			{contentType: "not a mime type"},
+		}
+
+		for _, tc := range testCases {
+			m, err := FromContentType(tc.contentType)
+			require.Error(t, err, "expected error but got none for contentType %q", tc.contentType)
+			require.Equal(t, Modality(0), m, "expected 0 but got %q", m.String())
+		}
+	})
+}
+
 func TestNullModality_Scan(t *testing.T) {
 	t.Run("Nil", func(t *testing.T) {
 		var m NullModality

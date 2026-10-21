@@ -16,6 +16,7 @@ import (
 	"go.rtnl.ai/horizon/capabilities"
 	"go.rtnl.ai/horizon/config"
 	"go.rtnl.ai/horizon/errors"
+	"go.rtnl.ai/horizon/metadata"
 	"go.rtnl.ai/horizon/prompts"
 	"go.rtnl.ai/horizon/provider"
 	"go.rtnl.ai/horizon/schema"
@@ -95,7 +96,7 @@ func (cc *ChatCompletionsClient) Generate(ctx context.Context, req *provider.Req
 		msg := &prompts.Prompt{
 			Role: prompts.RoleAssistant, // Always assistant role for chat completions.
 			Type: FinishReasonType(choice.FinishReason),
-			Meta: meta,
+			Meta: metadata.Metadata(meta),
 		}
 
 		// The message can contain content or refusal (and possibly both). If there is

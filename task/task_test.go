@@ -6,6 +6,7 @@ import (
 
 	"github.com/stretchr/testify/require"
 	"go.rtnl.ai/horizon/capabilities"
+	"go.rtnl.ai/horizon/metadata"
 	"go.rtnl.ai/horizon/modality"
 	"go.rtnl.ai/horizon/params"
 	"go.rtnl.ai/horizon/prompts/templates"
@@ -26,6 +27,10 @@ func TestTaskClone(t *testing.T) {
 			Output:       &schema.Output{Schema: &schema.Schema{Name: "output"}},
 			Prompts:      templates.Templates{nil, {Content: "original"}},
 			Capabilities: []capabilities.Name{"original"},
+			Metadata: map[string]any{
+				"execution": "release",
+				"nested":    map[string]any{"labels": []any{"original"}},
+			},
 			Provider: &provider.Config{
 				DefaultModel: "original-model",
 				Credentials:  auth.NewNone(),
@@ -39,6 +44,8 @@ func TestTaskClone(t *testing.T) {
 		cloned.Output.Schema.Name = "changed output"
 		cloned.Prompts[1].Content = "changed prompt"
 		cloned.Capabilities[0] = "changed"
+		cloned.Metadata["execution"] = "changed"
+		cloned.Metadata["nested"].(map[string]any)["labels"].([]any)[0] = "changed"
 		cloned.Provider.DefaultModel = "changed-model"
 		cloned.Provider.Credentials = auth.NewAPIKey("new-key")
 		require.NotSame(t, original.Provider, cloned.Provider)
@@ -48,6 +55,9 @@ func TestTaskClone(t *testing.T) {
 		require.Equal(t, "output", original.Output.Schema.Name)
 		require.Equal(t, "original", original.Prompts[1].Content)
 		require.Equal(t, capabilities.Name("original"), original.Capabilities[0])
+		require.Equal(t, "release", original.Metadata["execution"])
+		require.Equal(t, "original", original.Metadata["nested"].(map[string]any)["labels"].([]any)[0])
+
 		value, ok := original.Model.Parameters.Get("temperature")
 		require.True(t, ok)
 		require.Equal(t, 0.5, value)
@@ -60,7 +70,9 @@ func TestTaskClone(t *testing.T) {
 
 	t.Run("empty task", func(t *testing.T) {
 		original := &task.Task{}
-		require.Equal(t, original, original.Clone())
+		cloned := original.Clone()
+		require.Equal(t, original, cloned)
+		require.Nil(t, cloned.Metadata)
 	})
 
 	t.Run("nil schemas", func(t *testing.T) {
@@ -122,6 +134,68 @@ func TestTaskSerialization(t *testing.T) {
 					}
 				})
 			}
+		})
+	}
+}
+
+// Verifies optional application metadata round-trips while legacy and empty tasks omit it.
+func TestTaskMetadataSerialization(t *testing.T) {
+	for _, format := range []string{"JSON", "YAML"} {
+		t.Run(format, func(t *testing.T) {
+			marshal := func(value task.Task) ([]byte, error) {
+				if format == "JSON" {
+					return json.Marshal(value)
+				}
+				return yaml.Marshal(value)
+			}
+			unmarshal := func(data []byte, value *task.Task) error {
+				if format == "JSON" {
+					return json.Unmarshal(data, value)
+				}
+				return yaml.Unmarshal(data, value)
+			}
+
+			// Existing task documents without metadata remain valid and omit the field.
+			legacy := task.Task{Output: &schema.Output{Modality: modality.Text}}
+			data, err := marshal(legacy)
+			require.NoError(t, err)
+			require.NotContains(t, string(data), "metadata")
+			var decoded task.Task
+			require.NoError(t, unmarshal(data, &decoded))
+			require.Nil(t, decoded.Metadata)
+
+			// Empty metadata is also omitted, while populated metadata round-trips.
+			legacy.Metadata = map[string]any{}
+			data, err = marshal(legacy)
+			require.NoError(t, err)
+			require.NotContains(t, string(data), "metadata")
+
+			legacy.Metadata = map[string]any{
+				"string": "usage-only",
+				"int":    42,
+				"float":  3.14,
+				"bool":   true,
+				"null":   nil,
+				"nested": map[string]any{"items": []any{"value", 7}},
+			}
+			data, err = marshal(legacy)
+			require.NoError(t, err)
+			require.NoError(t, unmarshal(data, &decoded))
+
+			// JSON has one numeric type; decoding into any produces float64.
+			want := metadata.Metadata{
+				"string": "usage-only",
+				"int":    42.0,
+				"float":  3.14,
+				"bool":   true,
+				"null":   nil,
+				"nested": map[string]any{"items": []any{"value", 7.0}},
+			}
+			if format == "YAML" {
+				want["int"] = 42
+				want["nested"] = metadata.Metadata{"items": []any{"value", 7}}
+			}
+			require.Equal(t, want, decoded.Metadata)
 		})
 	}
 }

@@ -244,7 +244,7 @@ func TestResponsesIntegration(t *testing.T) {
 
 		// Check the response output
 		require.GreaterOrEqual(t, len(rep.Output), 1)
-		output := rep.Output[len(rep.Output)-1]
+		output := lastNonReasoningOutput(t, rep.Output)
 
 		require.Equal(t, prompts.RoleAssistant, output.Role)
 		require.Equal(t, prompts.TypeMessage, output.Type)
@@ -303,7 +303,7 @@ func TestResponsesIntegration(t *testing.T) {
 		require.NotNil(t, rep)
 		require.GreaterOrEqual(t, len(rep.Output), 1)
 
-		output := rep.Output[len(rep.Output)-1]
+		output := lastNonReasoningOutput(t, rep.Output)
 		require.NotEmpty(t, output.Content)
 
 		// Attempt to parse the output as a JSON object
@@ -356,7 +356,7 @@ func TestResponsesIntegration(t *testing.T) {
 		require.NotNil(t, rep)
 		require.GreaterOrEqual(t, len(rep.Output), 1)
 
-		output := rep.Output[len(rep.Output)-1]
+		output := lastNonReasoningOutput(t, rep.Output)
 		require.NotEmpty(t, output.Content)
 
 		var content map[string]any
@@ -411,7 +411,7 @@ func TestResponsesIntegration(t *testing.T) {
 		require.NotNil(t, rep)
 		require.GreaterOrEqual(t, len(rep.Output), 1)
 
-		output := rep.Output[len(rep.Output)-1]
+		output := lastNonReasoningOutput(t, rep.Output)
 		require.NotEmpty(t, output.Content)
 
 		var subject map[string]any
@@ -466,7 +466,7 @@ func TestResponsesIntegration(t *testing.T) {
 		require.NotNil(t, rep)
 		require.GreaterOrEqual(t, len(rep.Output), 1)
 
-		output := rep.Output[len(rep.Output)-1]
+		output := lastNonReasoningOutput(t, rep.Output)
 		require.NotEmpty(t, output.Content)
 
 		var transcription map[string]any
@@ -519,7 +519,7 @@ func TestResponsesIntegration(t *testing.T) {
 		require.NotNil(t, rep)
 		require.GreaterOrEqual(t, len(rep.Output), 1)
 
-		output := rep.Output[len(rep.Output)-1]
+		output := lastNonReasoningOutput(t, rep.Output)
 		require.NotEmpty(t, output.Content)
 
 		var topic map[string]any
@@ -547,6 +547,20 @@ func TestResponsesIntegration(t *testing.T) {
 		require.NotEmpty(t, attachment.Filename)
 		require.NotEmpty(t, attachment.Data)
 	})
+}
+
+// Returns the last non-reasoning output prompt from the response, or fails the
+// test if none is found.
+func lastNonReasoningOutput(t *testing.T, output prompts.Prompts) *prompts.Prompt {
+	t.Helper()
+	for i := len(output) - 1; i >= 0; i-- {
+		item := output[i]
+		if item != nil && item.Type != prompts.TypeReasoning && strings.TrimSpace(item.Content) != "" {
+			return item
+		}
+	}
+	t.Fatal("response contains no non-reasoning output with content")
+	return nil
 }
 
 // Verifies tool calls and results map to Responses input items and function

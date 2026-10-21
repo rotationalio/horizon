@@ -14,25 +14,16 @@ import (
 	"go.rtnl.ai/ulid"
 )
 
-// RunnerFactory creates a fresh runner for each execution. Implementations must
-// support concurrent calls and must not share mutable execution state between
-// runners.
-type RunnerFactory interface {
-	NewRunner(context.Context) (task.Runner, error)
-}
-
-// Horizon owns shared provider registrations and creates execution-specific
-// runners. Create with [New].
+// Horizon owns shared provider registrations, HTTP client, configuration, and
+// execution mechanics. Create with [New].
 type Horizon struct {
 	providers  *provider.Cache
-	factory    RunnerFactory
-	handler    *Handler
 	config     config.Config
 	httpClient *stdhttp.Client
 }
 
-// New creates a Horizon using factory for embedded and HTTP executions.
-func New(factory RunnerFactory, options ...Option) (*Horizon, error) {
+// New creates an execution engine with shared provider and HTTP dependencies.
+func New(options ...Option) (*Horizon, error) {
 	conf, err := config.Get()
 	if err != nil {
 		return nil, fmt.Errorf("load Horizon configuration: %w", err)
@@ -52,14 +43,11 @@ func New(factory RunnerFactory, options ...Option) (*Horizon, error) {
 		return nil, fmt.Errorf("create provider cache: %w", err)
 	}
 
-	h := &Horizon{
+	return &Horizon{
 		providers:  providers,
-		factory:    factory,
 		config:     conf,
 		httpClient: client,
-	}
-	h.handler = &Handler{horizon: h}
-	return h, nil
+	}, nil
 }
 
 // GetProvider returns the cached provider with the given ID, if one exists.
@@ -80,13 +68,9 @@ func (h *Horizon) RemoveProvider(id ulid.ULID) bool {
 	return h.providers.Remove(id)
 }
 
-// Handler returns Horizon's HTTP handler and its editable task router.
-func (h *Horizon) Handler() *Handler {
-	return h.handler
-}
-
-// Run creates a runner and executes taskDefinition with input.
-func (h *Horizon) Run(ctx context.Context, input *task.Input, taskDefinition *task.Task) (output *task.Output, err error) {
+// Run executes a task with the caller's execution-local runner. It uses this
+// Horizon's configuration, HTTP client, and provider cache.
+func (h *Horizon) Run(ctx context.Context, input *task.Input, taskDefinition *task.Task, runner task.Runner) (output *task.Output, err error) {
 	ctx, span := tracer.Start(ctx, "horizon.run")
 	defer func() {
 		if err != nil {
@@ -101,10 +85,6 @@ func (h *Horizon) Run(ctx context.Context, input *task.Input, taskDefinition *ta
 		return nil, err
 	}
 
-	runner, err := h.factory.NewRunner(ctx)
-	if err != nil {
-		return nil, fmt.Errorf("create task runner: %w", err)
-	}
 	proc := newProcess(h, runner, input, taskDefinition, h.config, nil)
 	return proc.Run(ctx)
 }

@@ -1524,7 +1524,7 @@ func BenchmarkProcessActions(b *testing.B) {
 					},
 				},
 			}
-			h, err := horizon.New(testFactory(func(context.Context) (task.Runner, error) { return runner, nil }))
+			h, err := horizon.New()
 			require.NoError(b, err)
 			configuration := testProviderConfig()
 			inference := mockprovider.New(configuration.ID)

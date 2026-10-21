@@ -1,6 +1,10 @@
 package prompts
 
-import "slices"
+import (
+	"slices"
+
+	"go.rtnl.ai/horizon/metadata"
+)
 
 // A collection of [Prompt]s.
 type Prompts []*Prompt
@@ -8,17 +12,17 @@ type Prompts []*Prompt
 // A prompt is generally rendered from a [Template] and is a single message sent to the
 // LLM as part of a request to cause it to perform a generation.
 type Prompt struct {
-	ID          string         `json:"id,omitempty"`
-	Index       uint           `json:"index"`   // The index of the prompt in the list of prompts
-	Role        Role           `json:"role"`    // The role of the message sender.
-	Content     string         `json:"content"` // The rendered content of the message.
-	Status      string         `json:"status"`  // Any of "in_progress", "completed", "incomplete".
-	Phase       string         `json:"phase"`   // Any of "commentary", "final_answer".
-	Type        Type           `json:"type"`    // The normalized prompt content type.
-	Citations   []Citation     `json:"citations,omitempty"`
-	Meta        map[string]any `json:"meta,omitempty"`
-	ToolCalls   []ToolCall     `json:"tool_calls,omitempty"`   // Assistant tool calls associated with the message.
-	ToolResults []ToolResponse `json:"tool_results,omitempty"` // Results associated with prior tool calls.
+	ID          string            `json:"id,omitempty"`
+	Index       uint              `json:"index"`   // The index of the prompt in the list of prompts
+	Role        Role              `json:"role"`    // The role of the message sender.
+	Content     string            `json:"content"` // The rendered content of the message.
+	Status      string            `json:"status"`  // Any of "in_progress", "completed", "incomplete".
+	Phase       string            `json:"phase"`   // Any of "commentary", "final_answer".
+	Type        Type              `json:"type"`    // The normalized prompt content type.
+	Citations   []Citation        `json:"citations,omitempty"`
+	Meta        metadata.Metadata `json:"meta,omitempty"`
+	ToolCalls   []ToolCall        `json:"tool_calls,omitempty"`   // Assistant tool calls associated with the message.
+	ToolResults []ToolResponse    `json:"tool_results,omitempty"` // Results associated with prior tool calls.
 }
 
 // Clone returns an independent copy of the prompt's mutable fields. JSON-like
@@ -32,8 +36,8 @@ func (p *Prompt) Clone() *Prompt {
 	cloned.Citations = slices.Clone(p.Citations)
 	cloned.ToolCalls = slices.Clone(p.ToolCalls)
 	cloned.ToolResults = slices.Clone(p.ToolResults)
+	cloned.Meta = p.Meta.Clone()
 
-	cloned.Meta = CloneMeta(p.Meta)
 	return &cloned
 }
 
@@ -48,45 +52,6 @@ func (p Prompts) Clone() Prompts {
 		cloned[i] = prompt.Clone()
 	}
 	return cloned
-}
-
-// CloneMeta recursively copies JSON-like metadata containers, preserving nil.
-// Opaque values remain shared.
-func CloneMeta(meta map[string]any) map[string]any {
-	if meta == nil {
-		return nil
-	}
-
-	cloned := make(map[string]any, len(meta))
-	for key, value := range meta {
-		cloned[key] = cloneMetaValue(value)
-	}
-	return cloned
-}
-
-// cloneMetaValue recursively copies JSON-like metadata containers. Values
-// that are not map or slice types are returned as-is.
-func cloneMetaValue(value any) any {
-	switch value := value.(type) {
-	case map[string]any:
-		cloned := make(map[string]any, len(value))
-		for key, nested := range value {
-			cloned[key] = cloneMetaValue(nested)
-		}
-		return cloned
-	case []any:
-		cloned := make([]any, len(value))
-		for i, nested := range value {
-			cloned[i] = cloneMetaValue(nested)
-		}
-		return cloned
-	case []string:
-		return slices.Clone(value)
-	case []byte:
-		return slices.Clone(value)
-	default:
-		return value
-	}
 }
 
 type Citation struct {

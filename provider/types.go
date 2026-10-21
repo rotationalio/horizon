@@ -6,6 +6,7 @@ import (
 
 	"go.rtnl.ai/horizon/attachments"
 	"go.rtnl.ai/horizon/capabilities"
+	"go.rtnl.ai/horizon/metadata"
 	"go.rtnl.ai/horizon/params"
 	"go.rtnl.ai/horizon/prompts"
 	"go.rtnl.ai/horizon/schema"
@@ -64,7 +65,8 @@ func (r *Response) Clone() *Response {
 	cloned := *r
 	cloned.Output = r.Output.Clone()
 	cloned.Attachments = r.Attachments.Clone()
-	cloned.Meta = Meta(prompts.CloneMeta(r.Meta))
+	cloned.Meta = Meta(metadata.Metadata(r.Meta).Clone())
+
 	return &cloned
 }
 

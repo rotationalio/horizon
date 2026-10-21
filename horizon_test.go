@@ -30,9 +30,7 @@ func TestHorizonNewRejectsInvalidConfiguration(t *testing.T) {
 	t.Cleanup(config.Reset)
 	t.Setenv("HORIZON_FINALIZE_TIMEOUT", "0s")
 
-	h, err := horizon.New(testFactory(func(context.Context) (task.Runner, error) {
-		return selectedRunner(), nil
-	}))
+	h, err := horizon.New()
 	require.Nil(t, h)
 	require.Error(t, err)
 }
@@ -267,20 +265,129 @@ func TestHorizonUsesConfiguredHTTPClientTimeout(t *testing.T) {
 	require.Less(t, elapsed, 500*time.Millisecond, "configured HTTP timeout did not bound the provider request")
 }
 
-// The configured execution timeout includes runner creation and honors caller deadlines.
+// Verifies configured execution timeouts through the handler and both Run APIs.
 func TestHorizonExecutionTimeout(t *testing.T) {
+	// Setup one configured budget for all three public execution paths, then
+	// restore the global config after the test.
+	const timeout = 200 * time.Millisecond
 	conf, err := config.New()
 	require.NoError(t, err)
-	conf.ExecutionTimeout = 20 * time.Millisecond
+	conf.ExecutionTimeout = timeout
 	require.NoError(t, config.Set(*conf))
 	t.Cleanup(config.Reset)
 
-	h := newTestHorizon(t, testFactory(func(ctx context.Context) (task.Runner, error) {
-		<-ctx.Done()
-		return nil, ctx.Err()
-	}))
-	_, err = h.Run(context.Background(), nil, &task.Task{Output: &schema.Output{}})
-	require.ErrorIs(t, err, context.DeadlineExceeded)
+	// Each runner records its deadline, waits for cancellation, and reports
+	// the execution error to Finalize.
+	type deadlineObservation struct {
+		present  bool
+		deadline time.Time
+	}
+	newTimeoutRunner := func() (*mock.Runner, chan deadlineObservation, chan error) {
+		prepareDeadline := make(chan deadlineObservation, 1)
+		finalized := make(chan error, 1)
+		runner := noopRunner()
+		runner.OnPrepare = func(ctx context.Context, _ *task.Task) error {
+			deadline, present := ctx.Deadline()
+			prepareDeadline <- deadlineObservation{present: present, deadline: deadline}
+			if !present {
+				return errors.New("task context has no execution deadline")
+			}
+			timer := time.NewTimer(timeout * 2)
+			defer timer.Stop()
+			select {
+			case <-ctx.Done():
+				return ctx.Err()
+			case <-timer.C:
+				return errors.New("task context was not cancelled before the test bound")
+			}
+		}
+		runner.OnFinalize = func(_ context.Context, _ *task.Output, runErr error) error {
+			finalized <- runErr
+			return nil
+		}
+		return runner, prepareDeadline, finalized
+	}
+
+	// Keep timeout regressions bounded so they fail instead of hanging the suite.
+	waitForDeadline := func(t *testing.T, observed <-chan deadlineObservation) deadlineObservation {
+		t.Helper()
+		select {
+		case deadline := <-observed:
+			return deadline
+		case <-time.After(timeout * 10):
+			t.Fatal("execution did not report its context deadline")
+			return deadlineObservation{}
+		}
+	}
+	waitForExecutionError := func(t *testing.T, finalized <-chan error) {
+		t.Helper()
+		select {
+		case runErr := <-finalized:
+			require.ErrorIs(t, runErr, context.DeadlineExceeded)
+		case <-time.After(timeout * 10):
+			t.Fatal("runner was not finalized")
+		}
+	}
+
+	t.Run("handler shares its deadline with factory and execution", func(t *testing.T) {
+		// Setup a factory that spends part of the budget before returning
+		// the runner that waits for execution cancellation.
+		runner, prepareDeadline, finalized := newTimeoutRunner()
+		factoryDeadline := make(chan deadlineObservation, 1)
+		factory := testFactory(func(ctx context.Context) (task.Runner, error) {
+			deadline, present := ctx.Deadline()
+			factoryDeadline <- deadlineObservation{present: present, deadline: deadline}
+			timer := time.NewTimer(timeout / 4)
+			defer timer.Stop()
+			select {
+			case <-ctx.Done():
+				return nil, ctx.Err()
+			case <-timer.C:
+				return runner, nil
+			}
+		})
+
+		// Run a request through the handler, which starts the timeout before
+		// it calls the factory.
+		h := newTestHorizon(t, factory)
+		handler := h.Handler()
+		handler.Router().Insert("/task", &task.Task{Output: &schema.Output{}})
+		response := httptest.NewRecorder()
+		handler.ServeHTTP(response, httptest.NewRequest(http.MethodGet, "/task", nil))
+
+		// Assert both stages received the same deadline and finalization
+		// received the deadline error.
+		require.Equal(t, http.StatusInternalServerError, response.Code)
+		factoryContext := waitForDeadline(t, factoryDeadline)
+		taskContext := waitForDeadline(t, prepareDeadline)
+		require.True(t, factoryContext.present, "factory context should have an execution deadline")
+		require.True(t, taskContext.present, "task context should have an execution deadline")
+		require.True(t, factoryContext.deadline.Equal(taskContext.deadline), "Run must not restart the handler's timeout")
+		waitForExecutionError(t, finalized)
+	})
+
+	t.Run("Horizon.Run applies the configured timeout", func(t *testing.T) {
+		// Run directly with an explicit runner to verify the shared engine applies the budget.
+		runner, prepareDeadline, finalized := newTimeoutRunner()
+		h := newTestHorizon(t, nil)
+		_, err := h.Horizon.Run(context.Background(), nil, &task.Task{Output: &schema.Output{}}, runner)
+
+		// Assert Run returns the timeout cause and the runner observed a deadline.
+		require.ErrorIs(t, err, context.DeadlineExceeded)
+		require.True(t, waitForDeadline(t, prepareDeadline).present)
+		waitForExecutionError(t, finalized)
+	})
+
+	t.Run("package Run applies the configured timeout", func(t *testing.T) {
+		// Exercise the one-off package helper with a fresh runner and the same config.
+		runner, prepareDeadline, finalized := newTimeoutRunner()
+		_, err := horizon.Run(context.Background(), nil, &task.Task{Output: &schema.Output{}}, runner)
+
+		// Assert this API also applies the budget and finalizes with its expiration cause.
+		require.ErrorIs(t, err, context.DeadlineExceeded)
+		require.True(t, waitForDeadline(t, prepareDeadline).present)
+		waitForExecutionError(t, finalized)
+	})
 }
 
 // Verifies one-off execution constructs the provider selected by the runner.
@@ -358,21 +465,52 @@ func TestHorizonUnregister(t *testing.T) {
 	require.True(t, h.RemoveProvider(config.ID), "execution recreates the evicted provider")
 }
 
-func newTestHorizon(t *testing.T, factory horizon.RunnerFactory) *horizon.Horizon {
+// newTestHorizon creates a shared engine and attaches the factory used by these tests.
+func newTestHorizon(t *testing.T, factory horizon.RunnerFactory) *testHorizon {
 	t.Helper()
-	h, err := horizon.New(factory)
+	engine, err := horizon.New()
 	require.NoError(t, err)
-	return h
+	return &testHorizon{Horizon: engine, factory: factory}
 }
 
+// testHorizon adapts the explicit-runner engine for tests that exercise a runner factory.
+type testHorizon struct {
+	*horizon.Horizon
+	factory horizon.RunnerFactory
+	handler *horizon.Handler
+}
+
+// Run creates a test runner and executes the task through the underlying Horizon.
+func (h *testHorizon) Run(ctx context.Context, input *task.Input, definition *task.Task) (*task.Output, error) {
+	if err := ctx.Err(); err != nil {
+		return nil, err
+	}
+	runner, err := h.factory.NewRunner(ctx)
+	if err != nil {
+		return nil, err
+	}
+	return h.Horizon.Run(ctx, input, definition, runner)
+}
+
+// Handler creates and retains one HTTP handler so test routes persist between requests.
+func (h *testHorizon) Handler() *horizon.Handler {
+	if h.handler == nil {
+		h.handler, _ = h.Horizon.NewHandler(h.factory)
+	}
+	return h.handler
+}
+
+// testFactory adapts a callback to Horizon's runner factory interface.
 type testFactory func(context.Context) (task.Runner, error)
 
+// NewRunner calls the test callback to create an execution-local runner.
 func (f testFactory) NewRunner(ctx context.Context) (task.Runner, error) {
 	return f(ctx)
 }
 
 var testProviderID = ulid.MustParse("01ARZ3NDEKTSV4RRFFQ69G5FAV")
 
+// testProviderConfig returns the shared mock provider configuration for tests.
 func testProviderConfig() provider.Config {
 	return provider.Config{
 		ID:           testProviderID,
@@ -382,6 +520,7 @@ func testProviderConfig() provider.Config {
 	}
 }
 
+// noopRunner returns a runner with no-op preparation and finalization hooks.
 func noopRunner() *mock.Runner {
 	return &mock.Runner{
 		OnPrepare:  func(context.Context, *task.Task) error { return nil },
@@ -389,6 +528,7 @@ func noopRunner() *mock.Runner {
 	}
 }
 
+// selectedRunner selects the standard mock provider during task preparation.
 func selectedRunner() *mock.Runner {
 	runner := noopRunner()
 	runner.OnPrepare = func(_ context.Context, t *task.Task) error {

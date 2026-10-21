@@ -4,6 +4,7 @@ import (
 	"slices"
 
 	"go.rtnl.ai/horizon/capabilities"
+	"go.rtnl.ai/horizon/metadata"
 	"go.rtnl.ai/horizon/params"
 	"go.rtnl.ai/horizon/prompts/templates"
 	"go.rtnl.ai/horizon/provider"
@@ -32,7 +33,7 @@ type Task struct {
 	Model        Model               `json:"model" yaml:"model" msg:"model"`                                                    // The Model used for the task
 	Prompts      templates.Templates `json:"prompts" yaml:"prompts" msg:"prompts"`                                              // The prompts used for the task
 	Capabilities []capabilities.Name `json:"capabilities,omitempty" yaml:"capabilities,omitempty" msg:"capabilities,omitempty"` // The capabilities enabled for the task
-	Metadata     map[string]string   `json:"metadata,omitempty" yaml:"metadata,omitempty" msg:"metadata,omitempty"`             // Application-specific metadata for the task
+	Metadata     metadata.Metadata   `json:"metadata,omitempty" yaml:"metadata,omitempty" msg:"metadata,omitempty"`             // Application-specific metadata for the task
 
 	// Task Execution Configuration
 	Provider *provider.Config `json:"provider,omitempty" yaml:"provider,omitempty" msg:"provider,omitempty"` // The inference provider used for the task
@@ -52,12 +53,7 @@ func (t *Task) Clone() *Task {
 	}
 	cloned := *t
 	cloned.Capabilities = slices.Clone(t.Capabilities)
-	if t.Metadata != nil {
-		cloned.Metadata = make(map[string]string, len(t.Metadata))
-		for key, value := range t.Metadata {
-			cloned.Metadata[key] = value
-		}
-	}
+	cloned.Metadata = t.Metadata.Clone()
 	cloned.Model.Parameters = t.Model.Parameters.Clone()
 	if t.Provider != nil {
 		config := *t.Provider

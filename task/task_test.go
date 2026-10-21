@@ -6,6 +6,7 @@ import (
 
 	"github.com/stretchr/testify/require"
 	"go.rtnl.ai/horizon/capabilities"
+	"go.rtnl.ai/horizon/metadata"
 	"go.rtnl.ai/horizon/modality"
 	"go.rtnl.ai/horizon/params"
 	"go.rtnl.ai/horizon/prompts/templates"
@@ -26,7 +27,10 @@ func TestTaskClone(t *testing.T) {
 			Output:       &schema.Output{Schema: &schema.Schema{Name: "output"}},
 			Prompts:      templates.Templates{nil, {Content: "original"}},
 			Capabilities: []capabilities.Name{"original"},
-			Metadata:     map[string]string{"execution": "release"},
+			Metadata: map[string]any{
+				"execution": "release",
+				"nested":    map[string]any{"labels": []any{"original"}},
+			},
 			Provider: &provider.Config{
 				DefaultModel: "original-model",
 				Credentials:  auth.NewNone(),
@@ -41,6 +45,7 @@ func TestTaskClone(t *testing.T) {
 		cloned.Prompts[1].Content = "changed prompt"
 		cloned.Capabilities[0] = "changed"
 		cloned.Metadata["execution"] = "changed"
+		cloned.Metadata["nested"].(map[string]any)["labels"].([]any)[0] = "changed"
 		cloned.Provider.DefaultModel = "changed-model"
 		cloned.Provider.Credentials = auth.NewAPIKey("new-key")
 		require.NotSame(t, original.Provider, cloned.Provider)
@@ -51,6 +56,7 @@ func TestTaskClone(t *testing.T) {
 		require.Equal(t, "original", original.Prompts[1].Content)
 		require.Equal(t, capabilities.Name("original"), original.Capabilities[0])
 		require.Equal(t, "release", original.Metadata["execution"])
+		require.Equal(t, "original", original.Metadata["nested"].(map[string]any)["labels"].([]any)[0])
 
 		value, ok := original.Model.Parameters.Get("temperature")
 		require.True(t, ok)
@@ -159,15 +165,37 @@ func TestTaskMetadataSerialization(t *testing.T) {
 			require.Nil(t, decoded.Metadata)
 
 			// Empty metadata is also omitted, while populated metadata round-trips.
-			legacy.Metadata = map[string]string{}
+			legacy.Metadata = map[string]any{}
 			data, err = marshal(legacy)
 			require.NoError(t, err)
 			require.NotContains(t, string(data), "metadata")
-			legacy.Metadata = map[string]string{"execution": "usage-only"}
+
+			legacy.Metadata = map[string]any{
+				"string": "usage-only",
+				"int":    42,
+				"float":  3.14,
+				"bool":   true,
+				"null":   nil,
+				"nested": map[string]any{"items": []any{"value", 7}},
+			}
 			data, err = marshal(legacy)
 			require.NoError(t, err)
 			require.NoError(t, unmarshal(data, &decoded))
-			require.Equal(t, legacy.Metadata, decoded.Metadata)
+
+			// JSON has one numeric type; decoding into any produces float64.
+			want := metadata.Metadata{
+				"string": "usage-only",
+				"int":    42.0,
+				"float":  3.14,
+				"bool":   true,
+				"null":   nil,
+				"nested": map[string]any{"items": []any{"value", 7.0}},
+			}
+			if format == "YAML" {
+				want["int"] = 42
+				want["nested"] = metadata.Metadata{"items": []any{"value", 7}}
+			}
+			require.Equal(t, want, decoded.Metadata)
 		})
 	}
 }

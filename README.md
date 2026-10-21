@@ -107,29 +107,28 @@ type Runner interface {
 
 ```go
 type AppRunner struct {
-    provider provider.Config
+     /* Application internal state */
 }
 
 func (r *AppRunner) Prepare(_ context.Context, tsk *task.Task) error {
+    // Prepare application-local state and other resources.
+    //
     // The task passed to Prepare is an execution-local copy.
-    if tsk.Provider == nil {
-        tsk.Provider = &r.provider
-    }
     return nil
 }
 
 func (r *AppRunner) Finalize(_ context.Context, output *task.Output, runErr error) error {
-    // Record output or runErr, release execution-local resources, etc.
+    // Record output and/or runErr, release execution-local resources, etc.
     return nil
 }
 
 // RunnerFactory creates a fresh runner for each HTTP execution.
 type RunnerFactory struct {
-    provider provider.Config
+     /* Application internal state */
 }
 
 func (f RunnerFactory) NewRunner(context.Context) (task.Runner, error) {
-    return &AppRunner{provider: f.provider}, nil
+    return &AppRunner{ /* Application internal state */ }, nil
 }
 ```
 
@@ -141,7 +140,7 @@ if err != nil {
     return err
 }
 
-runner := &AppRunner{provider: providerConfig}
+runner := &AppRunner{ /* Application internal state */ }
 output, err := h.Run(ctx, input, taskDefinition, runner)
 if err != nil {
     return err
@@ -233,7 +232,7 @@ flowchart TD
 A handler decodes input, finds the task by URL path, creates an execution-local runner, runs the task, and writes the result. Each handler has an independent router and factory; retain the constructed handler to preserve its routes:
 
 ```go
-handler, err := h.NewHandler(RunnerFactory{provider: providerConfig})
+handler, err := h.NewHandler(RunnerFactory{ /* Application internal state */ })
 if err != nil {
     return err
 }
@@ -262,7 +261,7 @@ To mount the same handler in Gin, register the HTTP methods you want to accept a
 
 ```go
 engine := gin.Default()
-handler, err := h.NewHandler(RunnerFactory{provider: providerConfig})
+handler, err := h.NewHandler(RunnerFactory{ /* Application internal state */ })
 if err != nil {
     return err
 }
@@ -384,7 +383,7 @@ func runSummary(ctx context.Context, h *horizon.Horizon, providerConfig provider
     input := &task.Input{
         Context: prompts.Context{"text": "A short article to summarize."},
     }
-    runner := &AppRunner{provider: providerConfig}
+    runner := &AppRunner{ /* Application internal state */ }
     output, err := h.Run(ctx, input, tsk, runner)
     if err != nil {
         return "", err

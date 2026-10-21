@@ -19,6 +19,7 @@ import (
 	"go.rtnl.ai/horizon/capabilities"
 	"go.rtnl.ai/horizon/config"
 	"go.rtnl.ai/horizon/errors"
+	"go.rtnl.ai/horizon/metadata"
 	"go.rtnl.ai/horizon/prompts"
 	"go.rtnl.ai/horizon/provider"
 	"go.rtnl.ai/horizon/schema"
@@ -112,7 +113,7 @@ func (rc *ResponsesClient) Generate(ctx context.Context, req *provider.Request) 
 				Status: string(variant.Status),
 				Phase:  string(variant.Phase),
 				Type:   ResponseStatusType(resp.Status, resp.IncompleteDetails.Reason),
-				Meta:   meta,
+				Meta:   metadata.Metadata(meta),
 			}
 
 			var logprobs []responses.ResponseOutputTextLogprob
@@ -193,7 +194,7 @@ func (rc *ResponsesClient) Generate(ctx context.Context, req *provider.Request) 
 				Type:    prompts.TypeReasoning,
 				Content: summary.String(),
 				Status:  string(variant.Status),
-				Meta:    meta,
+				Meta:    metadata.Metadata(meta),
 			})
 		default:
 			// Other Responses output item types are not currently represented by prompts.
@@ -209,7 +210,7 @@ func (rc *ResponsesClient) Generate(ctx context.Context, req *provider.Request) 
 				Role:    prompts.RoleAssistant,
 				Type:    ResponseStatusType(resp.Status, resp.IncompleteDetails.Reason),
 				Content: text,
-				Meta:    make(provider.Meta),
+				Meta:    metadata.Metadata{},
 			})
 		} else {
 			return nil, errors.ErrNoResponseOutput

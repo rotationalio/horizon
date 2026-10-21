@@ -7,6 +7,8 @@ import (
 	"fmt"
 	"strconv"
 	"strings"
+
+	"go.rtnl.ai/x/mime"
 )
 
 // Modalities are bitmasks that allow us to specify multimodal types using a single
@@ -221,6 +223,46 @@ func (m Modality) NullModality() NullModality {
 
 func (n NullModality) ToModality() (m Modality, ok bool) {
 	return n.Modality, n.Valid
+}
+
+func FromContentType(contentType string) (m Modality, err error) {
+	var mimeType mime.Type
+	if mimeType, err = mime.ParseMimeType(contentType); err != nil {
+		return 0, err
+	}
+
+	return FromMimeType(mimeType), nil
+}
+
+func FromMimeType(mimeType mime.Type) Modality {
+	switch {
+	case mimeType.IsText():
+		return Text
+	case mimeType.IsImage():
+		return Image
+	case mimeType.IsAudio():
+		return Audio
+	case mimeType.IsVideo():
+		return Video
+	case mimeType.IsApplication():
+		// Handle common application formats
+		switch mimeType.Sub() {
+		case "json":
+			return Text
+		case "mp4":
+			return Video
+		case "toml":
+			return Text
+		case "xml":
+			return Text | Document
+		case "yaml":
+			return Text
+		default:
+			return Document
+		}
+	default:
+		return Document
+	}
 }
 
 //============================================================================

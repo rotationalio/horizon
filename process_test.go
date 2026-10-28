@@ -19,6 +19,7 @@ import (
 	"go.rtnl.ai/horizon/attachments"
 	"go.rtnl.ai/horizon/capabilities"
 	"go.rtnl.ai/horizon/errors"
+	"go.rtnl.ai/horizon/modality"
 	"go.rtnl.ai/horizon/params"
 	"go.rtnl.ai/horizon/prompts"
 	"go.rtnl.ai/horizon/prompts/templates"
@@ -63,6 +64,24 @@ func TestProcessRunSuccessfulInference(t *testing.T) {
 	require.False(t, output.Finished.IsZero())
 	require.Equal(t, []string{"prepare", "input guard", "generate", "output guard", "finalize"}, runner.events)
 	require.Equal(t, 1, inference.Calls(t, mockprovider.Generate))
+}
+
+// Test that process does not run an invalid task
+func TestProcessInvalidTask(t *testing.T) {
+	h := newTestHorizon(t, testFactory(func(context.Context) (task.Runner, error) { return &processTestRunner{}, nil }))
+	_, err := h.Run(context.Background(), &task.Input{}, &task.Task{
+		Input: &schema.Input{
+			Modality: modality.Text,
+		},
+		Output: &schema.Output{
+			Modality: modality.Image,
+		},
+		Provider: &provider.Config{
+			APIType: provider.APITypeOpenAIChatCompletions,
+		},
+	})
+	require.Error(t, err)
+	require.ErrorContains(t, err, "invalid task")
 }
 
 // A finalization failure updates a successful execution's returned outcome.

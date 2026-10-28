@@ -180,11 +180,12 @@ func (p *process) Prepare(ctx context.Context) (err error) {
 	if err = p.runner.Prepare(ctx, p.task); err != nil {
 		return fmt.Errorf("prepare execution: %w", err)
 	}
-	if p.task.Provider == nil {
-		return errors.ErrProviderRequired
-	}
 
-	// TODO: Validate that the provider can handle the task.
+	// Validate that the provider can handle the task
+	// TODO: Perform full schema validation here as well
+	if err = p.task.Validate(); err != nil {
+		return fmt.Errorf("invalid task: %w", err)
+	}
 
 	if p.horizon == nil {
 		p.provider, err = provider.New(*p.task.Provider, provider.WithHTTPClient(p.httpClient))

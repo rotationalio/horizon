@@ -1,9 +1,11 @@
 package task
 
 import (
+	"fmt"
 	"slices"
 
 	"go.rtnl.ai/horizon/capabilities"
+	"go.rtnl.ai/horizon/errors"
 	"go.rtnl.ai/horizon/metadata"
 	"go.rtnl.ai/horizon/params"
 	"go.rtnl.ai/horizon/prompts/templates"
@@ -11,6 +13,7 @@ import (
 	"go.rtnl.ai/horizon/schema"
 	"go.rtnl.ai/ulid"
 	"go.rtnl.ai/x/semver"
+	"go.rtnl.ai/x/validation"
 )
 
 //============================================================================
@@ -44,6 +47,27 @@ type Task struct {
 type Model struct {
 	Slug       string         `json:"slug" yaml:"slug" msg:"slug"`
 	Parameters *params.Params `json:"parameters,omitempty" yaml:"parameters,omitempty" msg:"parameters,omitempty"`
+}
+
+// Performs static validation of the task.
+func (t *Task) Validate() (err error) {
+	if t.Provider == nil {
+		return errors.ErrProviderRequired
+	}
+
+	if t.Input != nil {
+		if missing := t.Input.Modality &^ t.Provider.APIType.InputModality(); missing != 0 {
+			err = validation.Error(err, validation.Incorrect("input.modality", fmt.Sprintf("input modality %s is not supported by the provider", missing.String())))
+		}
+	}
+
+	if t.Output != nil {
+		if missing := t.Output.Modality &^ t.Provider.APIType.OutputModality(); missing != 0 {
+			err = validation.Error(err, validation.Incorrect("output.modality", fmt.Sprintf("output modality %s is not supported by the provider", missing.String())))
+		}
+	}
+
+	return err
 }
 
 // Clone copies a task's mutable configuration for an execution.

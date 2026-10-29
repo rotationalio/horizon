@@ -15,6 +15,7 @@ import (
 	"go.rtnl.ai/horizon/schema"
 	"go.rtnl.ai/horizon/task"
 	"go.rtnl.ai/ulid"
+	"go.rtnl.ai/x/validation"
 	"go.yaml.in/yaml/v3"
 )
 
@@ -196,6 +197,75 @@ func TestTaskMetadataSerialization(t *testing.T) {
 				want["nested"] = metadata.Metadata{"items": []any{"value", 7}}
 			}
 			require.Equal(t, want, decoded.Metadata)
+		})
+	}
+}
+
+func TestTaskValidate(t *testing.T) {
+	testCases := []struct {
+		name string
+		task *task.Task
+		err  error
+	}{
+		{
+			name: "no provider",
+			task: &task.Task{
+				Input:  &schema.Input{Modality: modality.Text},
+				Output: &schema.Output{Modality: modality.Text},
+			},
+			err: validation.Error(validation.Missing("provider")),
+		},
+		{
+			name: "no modality restrictions",
+			task: &task.Task{
+				Input:  &schema.Input{},
+				Output: &schema.Output{},
+				Provider: &provider.Config{
+					APIType: provider.APITypeOpenAIChatCompletions,
+				},
+			},
+		},
+		{
+			name: "chat completions does not support image generation",
+			task: &task.Task{
+				Input:  &schema.Input{Modality: modality.Text},
+				Output: &schema.Output{Modality: modality.Image},
+				Provider: &provider.Config{
+					APIType: provider.APITypeOpenAIChatCompletions,
+				},
+			},
+			err: validation.Error(validation.Incorrect("output.modality", "output modality image is not supported by the provider")),
+		},
+		{
+			name: "responses does not support genomic",
+			task: &task.Task{
+				Input:  &schema.Input{Modality: modality.Genomic},
+				Output: &schema.Output{Modality: modality.Text},
+				Provider: &provider.Config{
+					APIType: provider.APITypeOpenAIResponses,
+				},
+			},
+			err: validation.Error(validation.Incorrect("input.modality", "input modality genomic is not supported by the provider")),
+		},
+		{
+			name: "responses supports image to image",
+			task: &task.Task{
+				Input:  &schema.Input{Modality: modality.Image},
+				Output: &schema.Output{Modality: modality.Image},
+				Provider: &provider.Config{
+					APIType: provider.APITypeOpenAIResponses,
+				},
+			},
+		},
+	}
+
+	for _, testCase := range testCases {
+		t.Run(testCase.name, func(t *testing.T) {
+			if testCase.err != nil {
+				require.Error(t, testCase.task.Validate(), "expected an error")
+			} else {
+				require.NoError(t, testCase.task.Validate())
+			}
 		})
 	}
 }

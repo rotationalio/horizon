@@ -75,10 +75,16 @@ func (h *Handler) ServeHTTP(w http.ResponseWriter, r *http.Request) {
 	}
 
 	// Load the input from the request.
-	// TODO: better validation of the request for better error messages.
 	if input, err = decodeInput(r); err != nil {
 		span.AddEvent("horizon.handler.input_rejected")
 		replyJSON(w, api.Error(err), http.StatusBadRequest)
+		return
+	}
+
+	// Validate the task against the input.
+	if err = tsk.ValidateInput(input); err != nil {
+		span.AddEvent("horizon.handler.input_validation_failed")
+		replyJSON(w, api.Error(err), http.StatusUnprocessableEntity)
 		return
 	}
 

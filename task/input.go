@@ -9,6 +9,7 @@ import (
 	"net/url"
 
 	"go.rtnl.ai/horizon/attachments"
+	"go.rtnl.ai/horizon/modality"
 	"go.rtnl.ai/horizon/prompts"
 )
 
@@ -102,4 +103,21 @@ func (i *Input) DecodePart(part *multipart.Part) (err error) {
 	}
 
 	return nil
+}
+
+// Return the modality of the input.
+func (i *Input) Modality() (out modality.Modality, err error) {
+	if i.Context != nil {
+		out = modality.Text
+	}
+
+	for _, attachment := range i.Attachments {
+		var m modality.Modality
+		if m, err = modality.FromContentType(attachment.ContentType); err != nil {
+			return 0, err
+		}
+		out |= m
+	}
+
+	return out, nil
 }

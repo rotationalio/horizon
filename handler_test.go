@@ -18,6 +18,7 @@ import (
 	"go.rtnl.ai/horizon/actions"
 	"go.rtnl.ai/horizon/attachments"
 	"go.rtnl.ai/horizon/errors"
+	"go.rtnl.ai/horizon/modality"
 	"go.rtnl.ai/horizon/prompts"
 	"go.rtnl.ai/horizon/provider"
 	providermock "go.rtnl.ai/horizon/provider/mock"
@@ -301,6 +302,7 @@ func TestHandlerErrors(t *testing.T) {
 	tests := []struct {
 		name        string
 		path        string
+		task        *task.Task
 		body        string
 		factoryErr  bool
 		prepareErr  bool
@@ -311,18 +313,28 @@ func TestHandlerErrors(t *testing.T) {
 		{
 			name:   "NotFound",
 			path:   "/missing",
+			task:   &task.Task{Output: &schema.Output{}},
 			body:   `{}`,
 			status: http.StatusNotFound,
 		},
 		{
 			name:   "BadRequest",
 			path:   "/task",
+			task:   &task.Task{Output: &schema.Output{}},
 			body:   `invalid`,
 			status: http.StatusBadRequest,
 		},
 		{
+			name:   "UnprocessableEntity",
+			path:   "/task",
+			task:   &task.Task{Input: &schema.Input{Modality: modality.Image}, Output: &schema.Output{}},
+			body:   `{"context":"value"}`,
+			status: http.StatusUnprocessableEntity,
+		},
+		{
 			name:       "Factory",
 			path:       "/task",
+			task:       &task.Task{Output: &schema.Output{}},
 			body:       `{}`,
 			factoryErr: true,
 			status:     http.StatusInternalServerError,
@@ -331,6 +343,7 @@ func TestHandlerErrors(t *testing.T) {
 		{
 			name:       "Prepare",
 			path:       "/task",
+			task:       &task.Task{Output: &schema.Output{}},
 			body:       `{}`,
 			prepareErr: true,
 			status:     http.StatusInternalServerError,
@@ -339,6 +352,7 @@ func TestHandlerErrors(t *testing.T) {
 		{
 			name:        "Finalize",
 			path:        "/task",
+			task:        &task.Task{Output: &schema.Output{}},
 			body:        `{}`,
 			finalizeErr: true,
 			status:      http.StatusInternalServerError,
@@ -367,7 +381,7 @@ func TestHandlerErrors(t *testing.T) {
 			}))
 			_, err := h.GetOrCreateProvider(testProviderConfig(), readyProvider())
 			require.NoError(t, err)
-			h.Handler().Router().Insert("/task", &task.Task{Output: &schema.Output{}})
+			h.Handler().Router().Insert("/task", tt.task)
 			response := httptest.NewRecorder()
 			h.Handler().ServeHTTP(response, httptest.NewRequest(http.MethodPost, tt.path, strings.NewReader(tt.body)))
 			require.Equal(t, tt.status, response.Code)

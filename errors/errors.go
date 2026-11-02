@@ -39,6 +39,7 @@ var (
 	ErrTaskModalitiesRequired     = errors.New("task modalities are required")
 	ErrTaskOutputRequired         = errors.New("task output is required")
 	ErrTaskRequired               = errors.New("task is required")
+	ErrMissingInput               = errors.New("missing input for task")
 
 	// Prompt and message conversion errors
 	ErrToolMessageMissingResults = errors.New("tool message must contain tool results")

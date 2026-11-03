@@ -245,7 +245,7 @@ func TestHandler(t *testing.T) {
 			}))
 			_, err := h.GetOrCreateProvider(testProviderConfig(), readyProvider())
 			require.NoError(t, err)
-			tsk := &task.Task{Output: &schema.Output{}}
+			tsk := &task.Task{Input: &schema.Input{Modality: modality.Text | modality.Document}, Output: &schema.Output{}}
 			handler := h.Handler()
 			handler.Router().Insert("/task", tsk)
 			response := httptest.NewRecorder()

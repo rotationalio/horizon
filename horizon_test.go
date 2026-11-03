@@ -514,7 +514,7 @@ var testProviderID = ulid.MustParse("01ARZ3NDEKTSV4RRFFQ69G5FAV")
 func testProviderConfig() provider.Config {
 	return provider.Config{
 		ID:           testProviderID,
-		APIType:      provider.APITypeMock,
+		APIType:      provider.APITypeOpenAIResponses,
 		ProviderType: provider.ProviderTypeMock,
 		Credentials:  auth.NewNone(),
 	}

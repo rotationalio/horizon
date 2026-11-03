@@ -80,8 +80,9 @@ func (i *Input) DecodePart(part *multipart.Part) (err error) {
 	// Decode file attachments.
 	if filename := part.FileName(); filename != "" {
 		i.Attachments = append(i.Attachments, &attachments.Attachment{
-			Filename: filename,
-			Data:     buf.Bytes(),
+			Filename:    filename,
+			ContentType: part.Header.Get("Content-Type"),
+			Data:        buf.Bytes(),
 		})
 		return nil
 	}

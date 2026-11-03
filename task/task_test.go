@@ -5,10 +5,13 @@ import (
 	"testing"
 
 	"github.com/stretchr/testify/require"
+	"go.rtnl.ai/horizon/attachments"
 	"go.rtnl.ai/horizon/capabilities"
+	"go.rtnl.ai/horizon/errors"
 	"go.rtnl.ai/horizon/metadata"
 	"go.rtnl.ai/horizon/modality"
 	"go.rtnl.ai/horizon/params"
+	"go.rtnl.ai/horizon/prompts"
 	"go.rtnl.ai/horizon/prompts/templates"
 	"go.rtnl.ai/horizon/provider"
 	"go.rtnl.ai/horizon/provider/auth"
@@ -265,6 +268,81 @@ func TestTaskValidate(t *testing.T) {
 				require.Error(t, testCase.task.Validate(), "expected an error")
 			} else {
 				require.NoError(t, testCase.task.Validate())
+			}
+		})
+	}
+}
+
+func TestValidateInput(t *testing.T) {
+	testCases := []struct {
+		name  string
+		task  *task.Task
+		input *task.Input
+		err   error
+	}{
+		{
+			name: "no input required",
+			task: &task.Task{},
+		},
+		{
+			name:  "context only",
+			task:  &task.Task{Input: &schema.Input{Modality: modality.Text}},
+			input: &task.Input{Context: prompts.Context{prompts.DefaultContextKey: "text"}},
+		},
+		{
+			name: "context and attachments",
+			task: &task.Task{Input: &schema.Input{Modality: modality.Text | modality.Image}},
+			input: &task.Input{Context: prompts.Context{prompts.DefaultContextKey: "text"}, Attachments: attachments.Attachments{
+				{ContentType: "text/plain"},
+				{ContentType: "image/png"},
+			}},
+		},
+		{
+			name:  "missing input",
+			task:  &task.Task{Input: &schema.Input{Modality: modality.Text}},
+			input: &task.Input{},
+			err:   errors.ErrMissingInput,
+		},
+		{
+			name: "bad content type",
+			task: &task.Task{Input: &schema.Input{Modality: modality.Text}},
+			input: &task.Input{Attachments: attachments.Attachments{
+				{ContentType: "not/a/content/type"},
+			}},
+			err: errors.New("invalid mime type"),
+		},
+		{
+			name:  "schema missing modality",
+			task:  &task.Task{Input: &schema.Input{Modality: modality.Image}},
+			input: &task.Input{Context: prompts.Context{prompts.DefaultContextKey: "text"}},
+			err:   validation.Incorrect("input.modality", "input modality Text is not supported by the task"),
+		},
+		{
+			name: "attachment not supported",
+			task: &task.Task{Input: &schema.Input{Modality: modality.Text}},
+			input: &task.Input{Attachments: attachments.Attachments{
+				{ContentType: "application/pdf"},
+			}},
+			err: validation.Incorrect("input.modality", "input modality Document is not supported by the task"),
+		},
+		{
+			name: "only one attachment supported",
+			task: &task.Task{Input: &schema.Input{Modality: modality.Text}},
+			input: &task.Input{Attachments: attachments.Attachments{
+				{ContentType: "text/plain"},
+				{ContentType: "application/pdf"},
+			}},
+			err: validation.Incorrect("input.modality", "input modality Document is not supported by the task"),
+		},
+	}
+
+	for _, testCase := range testCases {
+		t.Run(testCase.name, func(t *testing.T) {
+			err := testCase.task.ValidateInput(testCase.input)
+			if testCase.err != nil {
+				require.EqualError(t, testCase.err, err.Error())
+			} else {
+				require.NoError(t, err)
 			}
 		})
 	}

@@ -7,6 +7,7 @@ import (
 	"go.rtnl.ai/horizon/capabilities"
 	"go.rtnl.ai/horizon/errors"
 	"go.rtnl.ai/horizon/metadata"
+	"go.rtnl.ai/horizon/modality"
 	"go.rtnl.ai/horizon/params"
 	"go.rtnl.ai/horizon/prompts/templates"
 	"go.rtnl.ai/horizon/provider"
@@ -68,6 +69,29 @@ func (t *Task) Validate() (err error) {
 	}
 
 	return err
+}
+
+// Validate the task against the input.
+func (t *Task) ValidateInput(input *Input) (err error) {
+	// Task should be able to handle the input modality.
+	if t.Input != nil {
+		var m modality.Modality
+		if m, err = input.Modality(); err != nil {
+			return err
+		}
+
+		// If the task has a modality then there must be an input.
+		if !t.Input.Modality.IsZero() && m.IsZero() {
+			return errors.ErrMissingInput
+		}
+
+		if missing := m &^ t.Input.Modality; missing != 0 {
+			return validation.Incorrect("input.modality", fmt.Sprintf("input modality %s is not supported by the task", missing.String()))
+		}
+	}
+
+	// TODO: Validate input context against the schema.
+	return nil
 }
 
 // Clone copies a task's mutable configuration for an execution.

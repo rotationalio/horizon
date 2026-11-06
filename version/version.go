@@ -10,10 +10,10 @@ import (
 // Version component constants for the current build.
 const (
 	Major         = 1
-	Minor         = 0
+	Minor         = 1
 	Patch         = 0
 	ReleaseLevel  = "beta"
-	ReleaseNumber = 1
+	ReleaseNumber = 2
 )
 
 // Provides the Horizon user-agent value used for outbound requests.

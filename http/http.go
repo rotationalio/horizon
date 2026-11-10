@@ -69,18 +69,10 @@ func Get(ctx context.Context, target string, cred auth.RequestCredential, suppli
 		return nil, fmt.Errorf("maximum response body size must not be negative")
 	}
 
-	req, err := NewRequestWithContext(ctx, stdhttp.MethodGet, target, nil)
+	req, err := newRequest(ctx, stdhttp.MethodGet, target, nil, options.Accept, cred)
 	if err != nil {
 		return nil, err
 	}
-	req.Header.Set("User-Agent", version.UserAgent())
-	req.Header.Set("Accept", options.Accept)
-	if cred != nil {
-		if err := cred.Set(req); err != nil {
-			return nil, err
-		}
-	}
-
 	return send(req, options.Client, options.MaxBodyBytes)
 }
 
@@ -92,20 +84,28 @@ func PostJSON(ctx context.Context, target string, cred auth.RequestCredential, b
 		return nil, fmt.Errorf("encode request body: %w", err)
 	}
 
-	req, err := NewRequestWithContext(ctx, stdhttp.MethodPost, target, bytes.NewReader(payload))
+	req, err := newRequest(ctx, stdhttp.MethodPost, target, bytes.NewReader(payload), "application/json", cred)
+	if err != nil {
+		return nil, err
+	}
+	req.Header.Set("Content-Type", "application/json")
+	return send(req, client, 0)
+}
+
+// Builds a request with the standard headers and credentials applied.
+func newRequest(ctx context.Context, method, target string, body io.Reader, accept string, cred auth.RequestCredential) (*stdhttp.Request, error) {
+	req, err := NewRequestWithContext(ctx, method, target, body)
 	if err != nil {
 		return nil, err
 	}
 	req.Header.Set("User-Agent", version.UserAgent())
-	req.Header.Set("Accept", "application/json")
-	req.Header.Set("Content-Type", "application/json")
+	req.Header.Set("Accept", accept)
 	if cred != nil {
 		if err := cred.Set(req); err != nil {
 			return nil, err
 		}
 	}
-
-	return send(req, client, 0)
+	return req, nil
 }
 
 // Executes a prepared request and returns the body of a 2xx response.

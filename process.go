@@ -2,11 +2,10 @@ package horizon
 
 import (
 	"context"
-	"encoding/json"
 	"fmt"
 	"log/slog"
 	stdhttp "net/http"
-	"strings"
+	"slices"
 	"time"
 
 	"go.opentelemetry.io/otel"
@@ -275,32 +274,23 @@ func (p *process) Render(_ context.Context) (err error) {
 // [provider.Decisions] JSON. Move it onto the request and out of the transcript,
 // since decision models take questions or fields instead of a system prompt.
 func (p *process) extractDecisions() error {
-	if !p.task.Output.Modality.IsDecisions() {
+	if !p.task.Output.Modality.IsDecisions() || p.request.Decisions != nil {
 		return nil
 	}
 
-	kept := make(prompts.Prompts, 0, len(p.messages))
-	for _, message := range p.messages {
-		isSpec := message != nil && p.request.Decisions == nil &&
-			(message.Role == prompts.RoleSystem || message.Role == prompts.RoleDeveloper)
-		if !isSpec {
-			kept = append(kept, message)
-			continue
-		}
-
-		var spec provider.Decisions
-		decoder := json.NewDecoder(strings.NewReader(message.Content))
-		decoder.DisallowUnknownFields()
-		if err := decoder.Decode(&spec); err != nil {
-			return fmt.Errorf("%w: system prompt is not valid decisions JSON: %w", errors.ErrDecisionSpecRequired, err)
-		}
-		p.request.Decisions = &spec
-	}
-
-	if p.request.Decisions == nil {
+	i := slices.IndexFunc(p.messages, func(m *prompts.Prompt) bool {
+		return m != nil && (m.Role == prompts.RoleSystem || m.Role == prompts.RoleDeveloper)
+	})
+	if i < 0 {
 		return fmt.Errorf("%w: no system prompt with questions or fields", errors.ErrDecisionSpecRequired)
 	}
-	p.messages = kept
+
+	spec, err := provider.ParseDecisions(p.messages[i].Content)
+	if err != nil {
+		return fmt.Errorf("%w: system prompt is not valid decisions JSON: %w", errors.ErrDecisionSpecRequired, err)
+	}
+	p.request.Decisions = spec
+	p.messages = slices.Delete(slices.Clone(p.messages), i, i+1)
 	return nil
 }
 

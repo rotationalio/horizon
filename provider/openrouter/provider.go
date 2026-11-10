@@ -52,7 +52,7 @@ func NewProvider(conf provider.Config, options provider.Options) (p provider.Pro
 			return nil, err
 		}
 	case provider.APITypeDecisions:
-		// The decisions client looks up each model's route, so build the catalog first.
+		// The decisions client looks up each model's route in the catalog.
 		if client.CatalogClient, err = NewCatalog(conf, options); err != nil {
 			return nil, err
 		}

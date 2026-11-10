@@ -5,6 +5,7 @@ import (
 	"fmt"
 	"maps"
 	"slices"
+	"strings"
 
 	"go.rtnl.ai/x/validation"
 )
@@ -56,6 +57,18 @@ type Field struct {
 	Decimals      *int     `json:"decimals,omitempty"`       // number and duration fields; 0 to 6.
 }
 
+// ParseDecisions decodes a JSON spec, rejecting unknown fields. It does not
+// validate the structure; call [Decisions.Validate] for that.
+func ParseDecisions(s string) (*Decisions, error) {
+	var d Decisions
+	decoder := json.NewDecoder(strings.NewReader(s))
+	decoder.DisallowUnknownFields()
+	if err := decoder.Decode(&d); err != nil {
+		return nil, err
+	}
+	return &d, nil
+}
+
 // Validate checks the spec's structure, not which types a given model supports.
 func (d *Decisions) Validate() (err error) {
 	if d == nil || (len(d.Questions) == 0 && len(d.Fields) == 0) {
@@ -65,38 +78,35 @@ func (d *Decisions) Validate() (err error) {
 	for _, name := range slices.Sorted(maps.Keys(d.Questions)) {
 		field := fmt.Sprintf("questions.%s", name)
 		q := d.Questions[name]
-		switch q.Type {
-		case QuestionNoul:
-		case QuestionChoice, QuestionScore:
-			if q.Criteria == nil {
-				err = validation.Error(err, validation.Missing(field+".criteria"))
-			}
-		case "":
-			err = validation.Error(err, validation.Missing(field+".type"))
-		default:
-			err = validation.Error(err, validation.Incorrect(field+".type", fmt.Sprintf("%q is not a supported question type", q.Type)))
+		err = checkType(err, field, "question", q.Type, QuestionNoul, QuestionChoice, QuestionScore)
+		if (q.Type == QuestionChoice || q.Type == QuestionScore) && q.Criteria == nil {
+			err = validation.Error(err, validation.Missing(field+".criteria"))
 		}
 	}
 
 	for _, name := range slices.Sorted(maps.Keys(d.Fields)) {
 		field := fmt.Sprintf("fields.%s", name)
 		f := d.Fields[name]
-		switch f.Type {
-		case FieldText, FieldNumber, FieldDate, FieldTime, FieldDatetime, FieldDuration:
-		case FieldList:
-			if f.Items == "" {
-				err = validation.Error(err, validation.Missing(field+".items"))
-			}
-		case "":
-			err = validation.Error(err, validation.Missing(field+".type"))
-		default:
-			err = validation.Error(err, validation.Incorrect(field+".type", fmt.Sprintf("%q is not a supported field type", f.Type)))
+		err = checkType(err, field, "field", f.Type, FieldText, FieldNumber, FieldDate, FieldTime, FieldDatetime, FieldDuration, FieldList)
+		if f.Type == FieldList && f.Items == "" {
+			err = validation.Error(err, validation.Missing(field+".items"))
 		}
 		if f.NullThreshold != nil && (*f.NullThreshold <= 0 || *f.NullThreshold > 1) {
 			err = validation.Error(err, validation.Incorrect(field+".null_threshold", "must be greater than 0 and at most 1"))
 		}
 	}
 
+	return err
+}
+
+// checkType adds an error to err if typ is empty or not one of known.
+func checkType(err error, field, kind, typ string, known ...string) error {
+	switch {
+	case typ == "":
+		return validation.Error(err, validation.Missing(field+".type"))
+	case !slices.Contains(known, typ):
+		return validation.Error(err, validation.Incorrect(field+".type", fmt.Sprintf("%q is not a supported %s type", typ, kind)))
+	}
 	return err
 }
 

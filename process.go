@@ -2,9 +2,11 @@ package horizon
 
 import (
 	"context"
+	"encoding/json"
 	"fmt"
 	"log/slog"
 	stdhttp "net/http"
+	"strings"
 	"time"
 
 	"go.opentelemetry.io/otel"
@@ -159,6 +161,11 @@ func (p *process) Run(ctx context.Context) (output *task.Output, err error) {
 	p.output.Actions.AddMessage(ctx, actions.EntityUser, actions.EntityRunner,
 		p.messages, actions.WithAttachments(p.request.Attachments...))
 
+	// Step 3b: Decisions tasks carry their questions or fields in the system prompt.
+	if err = p.extractDecisions(); err != nil {
+		return p.output, fmt.Errorf("prepare decisions request: %w", err)
+	}
+
 	// Step 4: Generate once, or execute capabilities until a final answer arrives.
 	generate := func(ctx context.Context) error {
 		response, err := p.Generate(ctx)
@@ -262,6 +269,39 @@ func (p *process) Render(_ context.Context) (err error) {
 		p.request.Input, err = p.task.Prompts.Render(p.input.Context)
 	}
 	return err
+}
+
+// For a task with the decisions output modality, the system prompt holds the
+// [provider.Decisions] JSON. Move it onto the request and out of the transcript,
+// since decision models take questions or fields instead of a system prompt.
+func (p *process) extractDecisions() error {
+	if !p.task.Output.Modality.IsDecisions() {
+		return nil
+	}
+
+	kept := make(prompts.Prompts, 0, len(p.messages))
+	for _, message := range p.messages {
+		isSpec := message != nil && p.request.Decisions == nil &&
+			(message.Role == prompts.RoleSystem || message.Role == prompts.RoleDeveloper)
+		if !isSpec {
+			kept = append(kept, message)
+			continue
+		}
+
+		var spec provider.Decisions
+		decoder := json.NewDecoder(strings.NewReader(message.Content))
+		decoder.DisallowUnknownFields()
+		if err := decoder.Decode(&spec); err != nil {
+			return fmt.Errorf("%w: system prompt is not valid decisions JSON: %w", errors.ErrDecisionSpecRequired, err)
+		}
+		p.request.Decisions = &spec
+	}
+
+	if p.request.Decisions == nil {
+		return fmt.Errorf("%w: no system prompt with questions or fields", errors.ErrDecisionSpecRequired)
+	}
+	p.messages = kept
+	return nil
 }
 
 // Finalize the task with a short timeout separate from the caller context.

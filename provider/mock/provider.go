@@ -43,6 +43,7 @@ func init() {
 			provider.APITypeMock,
 			provider.APITypeOpenAIResponses,
 			provider.APITypeOpenAIChatCompletions,
+			provider.APITypeDecisions,
 		},
 		AuthTypes: []auth.Type{
 			auth.TypeAPIKey,

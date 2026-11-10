@@ -26,6 +26,7 @@ func TestModality_Parse(t *testing.T) {
 			{input: "\ttimeseries", expected: TimeSeries},
 			{input: "\tRobotic", expected: Robotic},
 			{input: "Genomic", expected: Genomic},
+			{input: " DECISIONS ", expected: Decisions},
 			{input: []string{"Text", "image"}, expected: Text | Image},
 			{input: []string{"text", "Image", "audio"}, expected: Text | Image | Audio},
 			{input: []string{"text", "IMAGE", " audio", "video"}, expected: Text | Image | Audio | Video},
@@ -167,9 +168,11 @@ func TestModality_String(t *testing.T) {
 			{name: "TimeSeries", mode: TimeSeries},
 			{name: "Robotic", mode: Robotic},
 			{name: "Genomic", mode: Genomic},
+			{name: "Decisions", mode: Decisions},
+			{name: "Text | Decisions", mode: Decisions | Text},
 			{
-				name: "Text | Image | Audio | Video | Document | Spatial | TimeSeries | Robotic | Genomic",
-				mode: Text | Image | Audio | Video | Document | Spatial | TimeSeries | Robotic | Genomic,
+				name: "Text | Image | Audio | Video | Document | Spatial | TimeSeries | Robotic | Genomic | Decisions",
+				mode: Text | Image | Audio | Video | Document | Spatial | TimeSeries | Robotic | Genomic | Decisions,
 			},
 		}
 
@@ -186,12 +189,12 @@ func TestModality_String(t *testing.T) {
 	})
 
 	t.Run("Unknown", func(t *testing.T) {
-		// The current biggest non-unknown modality is Genomic, the 9th modality, so
-		// the greatest value which contains all modalities is 2^9 - 1 = 511. which has
-		// the bitmask 0000000111111111. Any values larger than this that have their
-		// last 9 bits cleared and are not zero should be unknown.
-		for i := uint16(512); i < math.MaxUint16; i++ {
-			n := i &^ 511
+		// The current biggest non-unknown modality is Decisions, the 10th modality, so
+		// the greatest value which contains all modalities is 2^10 - 1 = 1023. which has
+		// the bitmask 0000001111111111. Any values larger than this that have their
+		// last 10 bits cleared and are not zero should be unknown.
+		for i := uint16(1024); i < math.MaxUint16; i++ {
+			n := i &^ 1023
 			if n == 0 {
 				continue
 			}
@@ -212,6 +215,7 @@ func TestModality_Is(t *testing.T) {
 		require.False(t, Text.IsTimeSeries())
 		require.False(t, Text.IsRobotic())
 		require.False(t, Text.IsGenomic())
+		require.False(t, Text.IsDecisions())
 	})
 
 	t.Run("Image", func(t *testing.T) {
@@ -224,6 +228,7 @@ func TestModality_Is(t *testing.T) {
 		require.False(t, Image.IsTimeSeries())
 		require.False(t, Image.IsRobotic())
 		require.False(t, Image.IsGenomic())
+		require.False(t, Image.IsDecisions())
 	})
 
 	t.Run("Audio", func(t *testing.T) {
@@ -236,6 +241,7 @@ func TestModality_Is(t *testing.T) {
 		require.False(t, Audio.IsTimeSeries())
 		require.False(t, Audio.IsRobotic())
 		require.False(t, Audio.IsGenomic())
+		require.False(t, Audio.IsDecisions())
 	})
 
 	t.Run("Video", func(t *testing.T) {
@@ -248,6 +254,7 @@ func TestModality_Is(t *testing.T) {
 		require.False(t, Video.IsTimeSeries())
 		require.False(t, Video.IsRobotic())
 		require.False(t, Video.IsGenomic())
+		require.False(t, Video.IsDecisions())
 	})
 
 	t.Run("Document", func(t *testing.T) {
@@ -260,6 +267,7 @@ func TestModality_Is(t *testing.T) {
 		require.False(t, Document.IsTimeSeries())
 		require.False(t, Document.IsRobotic())
 		require.False(t, Document.IsGenomic())
+		require.False(t, Document.IsDecisions())
 	})
 
 	t.Run("Spatial", func(t *testing.T) {
@@ -272,6 +280,7 @@ func TestModality_Is(t *testing.T) {
 		require.False(t, Spatial.IsTimeSeries())
 		require.False(t, Spatial.IsRobotic())
 		require.False(t, Spatial.IsGenomic())
+		require.False(t, Spatial.IsDecisions())
 	})
 
 	t.Run("TimeSeries", func(t *testing.T) {
@@ -284,6 +293,7 @@ func TestModality_Is(t *testing.T) {
 		require.True(t, TimeSeries.IsTimeSeries())
 		require.False(t, TimeSeries.IsRobotic())
 		require.False(t, TimeSeries.IsGenomic())
+		require.False(t, TimeSeries.IsDecisions())
 	})
 
 	t.Run("Robotic", func(t *testing.T) {
@@ -296,6 +306,7 @@ func TestModality_Is(t *testing.T) {
 		require.False(t, Robotic.IsTimeSeries())
 		require.True(t, Robotic.IsRobotic())
 		require.False(t, Robotic.IsGenomic())
+		require.False(t, Robotic.IsDecisions())
 	})
 
 	t.Run("Genomic", func(t *testing.T) {
@@ -308,10 +319,24 @@ func TestModality_Is(t *testing.T) {
 		require.False(t, Genomic.IsTimeSeries())
 		require.False(t, Genomic.IsRobotic())
 		require.True(t, Genomic.IsGenomic())
+		require.False(t, Genomic.IsDecisions())
+	})
+
+	t.Run("Decisions", func(t *testing.T) {
+		require.False(t, Decisions.IsText())
+		require.False(t, Decisions.IsImage())
+		require.False(t, Decisions.IsAudio())
+		require.False(t, Decisions.IsVideo())
+		require.False(t, Decisions.IsDocument())
+		require.False(t, Decisions.IsSpatial())
+		require.False(t, Decisions.IsTimeSeries())
+		require.False(t, Decisions.IsRobotic())
+		require.False(t, Decisions.IsGenomic())
+		require.True(t, Decisions.IsDecisions())
 	})
 
 	t.Run("All", func(t *testing.T) {
-		All := Modality(511)
+		All := Modality(1023)
 		require.True(t, All.IsText())
 		require.True(t, All.IsImage())
 		require.True(t, All.IsAudio())
@@ -321,6 +346,7 @@ func TestModality_Is(t *testing.T) {
 		require.True(t, All.IsTimeSeries())
 		require.True(t, All.IsRobotic())
 		require.True(t, All.IsGenomic())
+		require.True(t, All.IsDecisions())
 	})
 
 	t.Run("None", func(t *testing.T) {
@@ -334,6 +360,7 @@ func TestModality_Is(t *testing.T) {
 		require.False(t, None.IsTimeSeries())
 		require.False(t, None.IsRobotic())
 		require.False(t, None.IsGenomic())
+		require.False(t, None.IsDecisions())
 	})
 
 	t.Run("Combinations", func(t *testing.T) {
@@ -347,16 +374,17 @@ func TestModality_Is(t *testing.T) {
 			require.Equal(t, mode&TimeSeries != 0, mode.IsTimeSeries())
 			require.Equal(t, mode&Robotic != 0, mode.IsRobotic())
 			require.Equal(t, mode&Genomic != 0, mode.IsGenomic())
+			require.Equal(t, mode&Decisions != 0, mode.IsDecisions())
 		}
 	})
 
 	t.Run("Unknown", func(t *testing.T) {
-		// The current biggest non-unknown modality is Genomic, the 9th modality, so
-		// the greatest value which contains all modalities is 2^9 - 1 = 511. which has
-		// the bitmask 0000000111111111. Any values larger than this that have their
-		// last 9 bits cleared and are not zero should be unknown.
-		for i := uint16(512); i < math.MaxUint16; i++ {
-			n := i &^ 511
+		// The current biggest non-unknown modality is Decisions, the 10th modality, so
+		// the greatest value which contains all modalities is 2^10 - 1 = 1023. which has
+		// the bitmask 0000001111111111. Any values larger than this that have their
+		// last 10 bits cleared and are not zero should be unknown.
+		for i := uint16(1024); i < math.MaxUint16; i++ {
+			n := i &^ 1023
 			if n == 0 {
 				continue
 			}
@@ -371,6 +399,7 @@ func TestModality_Is(t *testing.T) {
 			require.False(t, mode.IsTimeSeries())
 			require.False(t, mode.IsRobotic())
 			require.False(t, mode.IsGenomic())
+			require.False(t, mode.IsDecisions())
 		}
 	})
 }
@@ -690,11 +719,11 @@ func TestModality_UnmarshalParam(t *testing.T) {
 
 // Using the formula 2^n where n is the number of modalities, we can generate all
 // possible combinations just by iterating over all the uint16 values up to that number.
-// Right now Text -> Genomic is 9 modalities, so 2^9 = 512 combinations. As we add more
+// Right now Text -> Decisions is 10 modalities, so 2^10 = 1024 combinations. As we add more
 // modalities, we will need to update this number.
 func Combinations() iter.Seq[Modality] {
 	return func(yield func(Modality) bool) {
-		for i := uint16(1); i < uint16(512); i++ {
+		for i := uint16(1); i < uint16(1024); i++ {
 			if !yield(Modality(i)) {
 				return
 			}

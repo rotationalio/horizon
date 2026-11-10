@@ -33,6 +33,43 @@ func TestEndpointGetJoinsBasePathAndQuery(t *testing.T) {
 	require.JSONEq(t, `{"ok":true}`, string(body))
 }
 
+// Confirms JSON posts send an encoded body with JSON headers and credentials, and
+// that non-2xx responses surface as request failures.
+func TestEndpointPostJSON(t *testing.T) {
+	server := httptest.NewServer(stdhttp.HandlerFunc(func(w stdhttp.ResponseWriter, r *stdhttp.Request) {
+		require.Equal(t, stdhttp.MethodPost, r.Method)
+		require.Equal(t, "/api/alpha/decisions", r.URL.Path)
+		require.Equal(t, "application/json", r.Header.Get("Content-Type"))
+		require.Equal(t, "application/json", r.Header.Get("Accept"))
+		require.Equal(t, "Bearer secret", r.Header.Get("Authorization"))
+		require.Equal(t, version.UserAgent(), r.Header.Get("User-Agent"))
+
+		data, err := io.ReadAll(r.Body)
+		require.NoError(t, err)
+		if strings.Contains(string(data), `"fail"`) {
+			stdhttp.Error(w, `{"error":"nope"}`, stdhttp.StatusBadRequest)
+			return
+		}
+		require.JSONEq(t, `{"model":"m","state":"s"}`, string(data))
+		_, _ = io.WriteString(w, `{"ok":true}`)
+	}))
+	t.Cleanup(server.Close)
+
+	endpoint, err := http.NewEndpoint(server.URL+"/api/alpha", nil, auth.NewAPIKey("secret"))
+	require.NoError(t, err)
+
+	body, err := endpoint.PostJSON(t.Context(), "decisions", map[string]string{"model": "m", "state": "s"})
+	require.NoError(t, err)
+	require.JSONEq(t, `{"ok":true}`, string(body))
+
+	_, err = endpoint.PostJSON(t.Context(), "decisions", map[string]string{"state": "fail"})
+	require.ErrorContains(t, err, "400 Bad Request")
+
+	// Values that cannot be encoded fail before any request is sent.
+	_, err = endpoint.PostJSON(t.Context(), "decisions", make(chan int))
+	require.ErrorContains(t, err, "encode request body")
+}
+
 // Confirms endpoint requests apply API key and organization credentials.
 func TestEndpointGetCredentials(t *testing.T) {
 	server := httptest.NewServer(stdhttp.HandlerFunc(func(w stdhttp.ResponseWriter, r *stdhttp.Request) {

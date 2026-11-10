@@ -20,6 +20,7 @@ type Request struct {
 	Attachments  attachments.Attachments   // Files, images, links, and other attached input.
 	OutputSchema *schema.Schema            // Requested output schema, particularly for JSON.
 	Tools        []capabilities.Definition // Tools advertised to the model.
+	Decisions    *Decisions                `json:",omitempty"` // Typed questions or fields for decision and extraction models.
 }
 
 // Clone returns a request snapshot with independent containers and typed values.
@@ -34,6 +35,7 @@ func (r *Request) Clone() *Request {
 	cloned.Input = r.Input.Clone()
 	cloned.Attachments = r.Attachments.Clone()
 	cloned.OutputSchema = r.OutputSchema.Clone()
+	cloned.Decisions = r.Decisions.Clone()
 	if r.Tools != nil {
 		cloned.Tools = make([]capabilities.Definition, len(r.Tools))
 		for i, tool := range r.Tools {
@@ -51,6 +53,7 @@ type Response struct {
 	Usage       Usage
 	Output      prompts.Prompts
 	Attachments attachments.Attachments
+	Answers     Answers `json:",omitempty"` // Typed answers from decision and extraction models.
 	Meta        Meta
 }
 
@@ -65,6 +68,7 @@ func (r *Response) Clone() *Response {
 	cloned := *r
 	cloned.Output = r.Output.Clone()
 	cloned.Attachments = r.Attachments.Clone()
+	cloned.Answers = r.Answers.Clone()
 	cloned.Meta = Meta(metadata.Metadata(r.Meta).Clone())
 
 	return &cloned

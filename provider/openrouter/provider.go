@@ -34,7 +34,7 @@ func (p *Provider) ID() ulid.ULID {
 func init() {
 	provider.Register(provider.ProviderTypeOpenRouter, provider.Registration{
 		Factory:   NewProvider,
-		APITypes:  []provider.APIType{provider.APITypeOpenAIResponses, provider.APITypeOpenAIChatCompletions},
+		APITypes:  []provider.APIType{provider.APITypeOpenAIResponses, provider.APITypeOpenAIChatCompletions, provider.APITypeDecisions},
 		AuthTypes: []auth.Type{auth.TypeAPIKey},
 	})
 }
@@ -51,12 +51,22 @@ func NewProvider(conf provider.Config, options provider.Options) (p provider.Pro
 		if client.Generator, err = openai.NewChatCompletions(conf, options); err != nil {
 			return nil, err
 		}
+	case provider.APITypeDecisions:
+		// The decisions client looks up each model's route, so build the catalog first.
+		if client.CatalogClient, err = NewCatalog(conf, options); err != nil {
+			return nil, err
+		}
+		if client.Generator, err = NewDecisions(conf, options, client.CatalogClient); err != nil {
+			return nil, err
+		}
 	default:
 		return nil, errors.ErrUnsupportedAPIType
 	}
 
-	if client.CatalogClient, err = NewCatalog(conf, options); err != nil {
-		return nil, err
+	if client.CatalogClient == nil {
+		if client.CatalogClient, err = NewCatalog(conf, options); err != nil {
+			return nil, err
+		}
 	}
 	return client, nil
 }
@@ -71,6 +81,12 @@ func (p *Provider) Status(ctx context.Context) (status provider.Status, err erro
 	var model *catalog.Model
 	if model, err = p.RetrieveModel(ctx, ConnectivityModel); err != nil {
 		return provider.StatusFromError(err), err
+	}
+
+	// The ping below is a text chat request, which decision models reject, so the
+	// catalog check is the only one for the decisions API type.
+	if _, ok := p.Generator.(*DecisionsClient); ok {
+		return provider.StatusConnected, nil
 	}
 
 	// Check inference connectivity

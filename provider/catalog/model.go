@@ -31,6 +31,10 @@ type Model struct {
 	RPMLimit       *int32            `json:"rpm_limit,omitempty"`
 	IsModerated    *bool             `json:"is_moderated,omitempty"`
 
+	// The API routes the provider lists for this model, in its order (e.g.
+	// "/api/alpha/decisions"). Empty when the provider does not publish them.
+	Endpoints []string `json:"endpoints,omitempty"`
+
 	// Model-specific links and metadata.
 
 	Links        Links        `json:"links,omitzero"`

@@ -8,7 +8,7 @@ import (
 
 func TestAPIType(t *testing.T) {
 	suite := enumify.TestSuite[APIType, [][]string]{
-		Values: []APIType{APITypeUnknown, APITypeMock, APITypeOpenAIResponses, APITypeOpenAIChatCompletions},
+		Values: []APIType{APITypeUnknown, APITypeMock, APITypeOpenAIResponses, APITypeOpenAIChatCompletions, APITypeDecisions},
 		Names:  apiTypeNames,
 		ICase:  true,
 		ISpace: true,

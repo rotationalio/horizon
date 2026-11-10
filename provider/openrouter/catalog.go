@@ -6,6 +6,7 @@ import (
 	"fmt"
 
 	"net/url"
+	"slices"
 	"strconv"
 	"strings"
 	"time"
@@ -146,6 +147,7 @@ type WireModel struct {
 	SupportedParameters []string              `json:"supported_parameters"`
 	Links               WireLinks             `json:"links"`
 	PerRequestLimits    *WirePerRequestLimits `json:"per_request_limits"`
+	Endpoints           []string              `json:"endpoints"`
 }
 
 // WireArchitecture is the OpenRouter model architecture object.
@@ -222,6 +224,7 @@ func (c *CatalogClient) ModelFromWire(wire WireModel) (catalog.Model, error) {
 		Limits:         limitsFromWire(wire.PerRequestLimits, wire.TopProvider),
 		Links:          c.linksFromWire(wire.Links, wire.HuggingFaceID),
 		IsModerated:    &wire.TopProvider.IsModerated,
+		Endpoints:      slices.Clone(wire.Endpoints),
 	}
 
 	if inputCost, err := parsePrice(wire.Pricing.Prompt); err != nil {

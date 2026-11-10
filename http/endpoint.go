@@ -54,6 +54,19 @@ func (e *Endpoint) Get(ctx context.Context, path string) ([]byte, error) {
 	})
 }
 
+// Performs a POST of body, encoded as JSON, against path appended to the
+// endpoint base path.
+func (e *Endpoint) PostJSON(ctx context.Context, path string, body any) ([]byte, error) {
+	if e == nil || e.baseURL == nil {
+		return nil, fmt.Errorf("endpoint is nil")
+	}
+	target, err := endpointURL(e.baseURL, path)
+	if err != nil {
+		return nil, err
+	}
+	return PostJSON(ctx, target, e.credentials, body, e.client)
+}
+
 // Joins a suffix to the base URL and combines their query parameters.
 func endpointURL(base *url.URL, suffix string) (string, error) {
 	rel, err := url.Parse(suffix)

@@ -1,7 +1,9 @@
 package http
 
 import (
+	"bytes"
 	"context"
+	"encoding/json"
 	"fmt"
 	"io"
 	stdhttp "net/http"
@@ -79,7 +81,35 @@ func Get(ctx context.Context, target string, cred auth.RequestCredential, suppli
 		}
 	}
 
-	client := options.Client
+	return send(req, options.Client, options.MaxBodyBytes)
+}
+
+// Performs an authenticated POST with body encoded as JSON. The response is
+// expected to be JSON. A nil client uses [DefaultClient].
+func PostJSON(ctx context.Context, target string, cred auth.RequestCredential, body any, client *stdhttp.Client) ([]byte, error) {
+	payload, err := json.Marshal(body)
+	if err != nil {
+		return nil, fmt.Errorf("encode request body: %w", err)
+	}
+
+	req, err := NewRequestWithContext(ctx, stdhttp.MethodPost, target, bytes.NewReader(payload))
+	if err != nil {
+		return nil, err
+	}
+	req.Header.Set("User-Agent", version.UserAgent())
+	req.Header.Set("Accept", "application/json")
+	req.Header.Set("Content-Type", "application/json")
+	if cred != nil {
+		if err := cred.Set(req); err != nil {
+			return nil, err
+		}
+	}
+
+	return send(req, client, 0)
+}
+
+// Executes a prepared request and returns the body of a 2xx response.
+func send(req *stdhttp.Request, client *stdhttp.Client, maxBodyBytes int64) ([]byte, error) {
 	if client == nil {
 		client = DefaultClient
 	}
@@ -90,8 +120,8 @@ func Get(ctx context.Context, target string, cred auth.RequestCredential, suppli
 	defer resp.Body.Close()
 
 	var bodyReader io.Reader = resp.Body
-	if options.MaxBodyBytes > 0 {
-		readLimit := options.MaxBodyBytes
+	if maxBodyBytes > 0 {
+		readLimit := maxBodyBytes
 		if readLimit < int64(^uint64(0)>>1) {
 			readLimit++
 		}
@@ -101,8 +131,8 @@ func Get(ctx context.Context, target string, cred auth.RequestCredential, suppli
 	if err != nil {
 		return nil, err
 	}
-	if options.MaxBodyBytes > 0 && int64(len(body)) > options.MaxBodyBytes {
-		return nil, fmt.Errorf("response body exceeds maximum size of %d bytes", options.MaxBodyBytes)
+	if maxBodyBytes > 0 && int64(len(body)) > maxBodyBytes {
+		return nil, fmt.Errorf("response body exceeds maximum size of %d bytes", maxBodyBytes)
 	}
 
 	if resp.StatusCode < stdhttp.StatusOK || resp.StatusCode >= stdhttp.StatusMultipleChoices {

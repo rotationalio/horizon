@@ -16,7 +16,7 @@ import (
 // multimodal input modality of text and image.
 //
 // For future proofing purposes, we allow up to 16 different modalities using a uint16
-// bitmask. Right now there are only 9 modalities, leaving room for an additional 7.
+// bitmask. Right now there are only 10 modalities, leaving room for an additional 6.
 //
 // In databases, store modalities as a SMALLINT (16 bits) for maximum space storage.
 // This package handles the conversion to and from the int16 type used in database
@@ -40,9 +40,10 @@ const (
 	TimeSeries
 	Robotic
 	Genomic
+	Decisions
 )
 
-var modes = [9]Modality{
+var modes = [10]Modality{
 	Text,
 	Image,
 	Audio,
@@ -52,9 +53,10 @@ var modes = [9]Modality{
 	TimeSeries,
 	Robotic,
 	Genomic,
+	Decisions,
 }
 
-var names = [9]string{
+var names = [10]string{
 	"Text",
 	"Image",
 	"Audio",
@@ -64,6 +66,7 @@ var names = [9]string{
 	"TimeSeries",
 	"Robotic",
 	"Genomic",
+	"Decisions",
 }
 
 var namesMap = map[string]Modality{
@@ -76,6 +79,7 @@ var namesMap = map[string]Modality{
 	"timeseries": TimeSeries,
 	"robotic":    Robotic,
 	"genomic":    Genomic,
+	"decisions":  Decisions,
 }
 
 func Parse(val any) (Modality, error) {
@@ -198,6 +202,10 @@ func (m Modality) IsRobotic() bool {
 
 func (m Modality) IsGenomic() bool {
 	return m&Genomic != 0
+}
+
+func (m Modality) IsDecisions() bool {
+	return m&Decisions != 0
 }
 
 func (m Modality) IsZero() bool {

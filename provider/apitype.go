@@ -12,6 +12,10 @@ const (
 	APITypeMock
 	APITypeOpenAIResponses
 	APITypeOpenAIChatCompletions
+
+	// APITypeDecisions covers decision and extraction models; the provider picks
+	// the concrete route per model.
+	APITypeDecisions
 )
 
 var apiTypeNames = [][]string{
@@ -20,12 +24,14 @@ var apiTypeNames = [][]string{
 		"mock",
 		"oai_responses",
 		"oai_completions",
+		"decisions",
 	},
 	{
 		"Unknown",
 		"Mock",
 		"OpenAI Responses",
 		"OpenAI Chat Completions",
+		"Decisions",
 	},
 }
 
@@ -34,6 +40,7 @@ var inputModalityMap = map[APIType]modality.Modality{
 	APITypeMock:                  modality.ZeroModality,
 	APITypeOpenAIResponses:       modality.Text | modality.Image | modality.Audio | modality.Video | modality.Document,
 	APITypeOpenAIChatCompletions: modality.Text | modality.Image | modality.Audio | modality.Video | modality.Document,
+	APITypeDecisions:             modality.Text, // Text only for now; image, audio and video are not wired up yet.
 }
 
 var outputModalityMap = map[APIType]modality.Modality{
@@ -41,6 +48,7 @@ var outputModalityMap = map[APIType]modality.Modality{
 	APITypeMock:                  modality.ZeroModality,
 	APITypeOpenAIResponses:       modality.Text | modality.Image | modality.Audio | modality.Video | modality.Document,
 	APITypeOpenAIChatCompletions: modality.Text | modality.Audio,
+	APITypeDecisions:             modality.Decisions,
 }
 
 // Returns a human-friendly API type name.

@@ -68,6 +68,13 @@ var (
 	ErrUnsupportedChatCompletionsAudioType = errors.New("unsupported chat completions audio content type")
 	ErrUnsupportedChatToolCallType         = errors.New("unsupported chat completion tool call type")
 
+	// Decisions provider errors
+	ErrDecisionSpecRequired     = errors.New("decisions request requires questions or fields")
+	ErrInvalidDecisionsResponse = errors.New("decisions response is invalid")
+	ErrNoModelEndpoints         = errors.New("catalog model lists no API endpoints")
+	ErrUnsupportedDecisionInput = errors.New("unsupported decisions input")
+	ErrUnsupportedModelEndpoint = errors.New("model endpoint is not supported by the decisions API type")
+
 	// General errors
 	ErrNotImplemented = errors.New("not implemented")
 )

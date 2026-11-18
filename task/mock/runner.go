@@ -128,7 +128,7 @@ type AttachmentProcessor struct {
 }
 
 // ProcessAttachment invokes OnProcessAttachment. It panics if OnProcessAttachment is unset.
-func (m *AttachmentProcessor) ProcessAttachment(attachment *attachments.Attachment) (*attachments.Attachment, error) {
+func (m *AttachmentProcessor) ProcessAttachment(ctx context.Context, attachment *attachments.Attachment) (*attachments.Attachment, error) {
 	m.Call(ProcessAttachment)
 	if m.OnProcessAttachment == nil {
 		panic("mock.AttachmentProcessor.OnProcessAttachment callback is not set")

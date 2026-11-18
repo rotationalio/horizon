@@ -69,7 +69,7 @@ type ContextProcessor interface {
 // the input before the request to the LLM is created. Generally speaking this is done
 // to load attachments into memory from disk or S3 or to prepare URLs for the LLM.
 type AttachmentProcessor interface {
-	ProcessAttachment(*attachments.Attachment) (*attachments.Attachment, error)
+	ProcessAttachment(context.Context, *attachments.Attachment) (*attachments.Attachment, error)
 }
 
 // Runners can optionally implement the render interface to prepare the input being

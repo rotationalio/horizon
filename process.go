@@ -236,7 +236,7 @@ func (p *process) ProcessAttachments(ctx context.Context) error {
 
 		if hasAP {
 			var err error
-			if attachment, err = preprocessor.ProcessAttachment(attachment); err != nil {
+			if attachment, err = preprocessor.ProcessAttachment(ctx, attachment); err != nil {
 				return fmt.Errorf("process attachment %d: %w", i, err)
 			}
 		}

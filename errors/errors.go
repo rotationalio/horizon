@@ -40,6 +40,7 @@ var (
 	ErrTaskOutputRequired         = errors.New("task output is required")
 	ErrTaskRequired               = errors.New("task is required")
 	ErrMissingInput               = errors.New("missing input for task")
+	ErrInvalidInput               = errors.New("task input validation failed")
 
 	// Prompt and message conversion errors
 	ErrToolMessageMissingResults = errors.New("tool message must contain tool results")
@@ -50,9 +51,10 @@ var (
 	ErrInvalidDataURI = errors.New("invalid data URI")
 
 	// Schema-related errors
-	ErrInvalidJSONSchema               = errors.New("JSON schema must be an object")
+	ErrInvalidJSONSchema               = errors.New("could not parse JSON schema")
 	ErrNoJSONSchema                    = errors.New("cannot derive JSON schema without schema data or URI")
 	ErrUnsupportedOutputSchemaMimeType = errors.New("unsupported output schema mime type")
+	ErrSchemaValidation                = errors.New("schema validation failed")
 
 	// Provider errors
 	ErrProviderIDMismatch = errors.New("provider ID does not match config ID")

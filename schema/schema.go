@@ -4,6 +4,7 @@ import (
 	"encoding/json"
 	"fmt"
 
+	"github.com/google/jsonschema-go/jsonschema"
 	"go.rtnl.ai/horizon/errors"
 	"go.rtnl.ai/horizon/modality"
 	"go.rtnl.ai/x/mime"
@@ -31,8 +32,30 @@ func (s *Schema) Clone() *Schema {
 	return &cloned
 }
 
-// TODO: Add support for schema validation directly in the Horizon package.
-func Validate(data any) error {
+// Validate the JSON schema against the data.
+func (s *Schema) Validate(data any) (err error) {
+	var (
+		raw      json.RawMessage
+		schema   jsonschema.Schema
+		resolved *jsonschema.Resolved
+	)
+
+	if raw, err = s.JSON(); err != nil {
+		return err
+	}
+
+	if err = json.Unmarshal(raw, &schema); err != nil {
+		return errors.Join(errors.ErrInvalidJSONSchema, err)
+	}
+
+	if resolved, err = schema.Resolve(nil); err != nil {
+		return errors.Join(errors.ErrInvalidJSONSchema, err)
+	}
+
+	if err = resolved.Validate(data); err != nil {
+		return errors.Join(errors.ErrSchemaValidation, err)
+	}
+
 	return nil
 }
 
@@ -47,7 +70,7 @@ func (s *Schema) Schema() (any, error) {
 	}
 }
 
-func (s *Schema) JSON() (_ any, err error) {
+func (s *Schema) JSON() (_ json.RawMessage, err error) {
 	// TODO: cache the jsonschema-go resolved schema object on the Schema struct.
 	// Check if there is any schema data on the struct. If not, fetch it from the URI.
 	if s.Data == "" {
@@ -59,33 +82,30 @@ func (s *Schema) JSON() (_ any, err error) {
 		return nil, errors.New("remote schema fetch not implemented yet")
 	}
 
-	// TODO: return a resolved and validated JSON schema object from jsonschema-go
 	return json.RawMessage(s.Data), nil
 }
 
-// Object returns the schema as a map. A nil schema describes an object
-// with no declared properties, which is useful for tools without parameters.
-func (s *Schema) Object() (map[string]any, error) {
+// Object returns the schema as a map[string]any. A nil schema describes an object with
+// no declared properties, which is useful for tools without parameters.
+func (s *Schema) Object() (object map[string]any, err error) {
+	var raw json.RawMessage
+
 	if s == nil {
 		return map[string]any{"type": "object"}, nil
 	}
 
-	value, err := s.JSON()
-	if err != nil {
+	if raw, err = s.JSON(); err != nil {
 		return nil, err
-	}
-	raw, ok := value.(json.RawMessage)
-	if !ok {
-		return nil, errors.ErrInvalidJSONSchema
 	}
 
-	var object map[string]any
-	if err := json.Unmarshal(raw, &object); err != nil {
+	if err = json.Unmarshal(raw, &object); err != nil {
 		return nil, err
 	}
+
 	if object == nil {
 		return nil, errors.ErrInvalidJSONSchema
 	}
+
 	return object, nil
 }
 

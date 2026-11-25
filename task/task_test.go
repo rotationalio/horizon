@@ -334,13 +334,20 @@ func TestValidateInput(t *testing.T) {
 			}},
 			err: validation.Incorrect("input.modality", "input modality Document is not supported by the task"),
 		},
+		{
+			name:  "invalid input",
+			task:  &task.Task{Input: &schema.Input{Modality: modality.Text, Schema: &schema.Schema{Data: `{"type":"object","properties":{"name":{"type":"number"}}}`}}},
+			input: &task.Input{Context: prompts.Context{"name": "John"}},
+			err:   errors.ErrInvalidInput,
+		},
 	}
 
 	for _, testCase := range testCases {
 		t.Run(testCase.name, func(t *testing.T) {
 			err := testCase.task.ValidateInput(testCase.input)
 			if testCase.err != nil {
-				require.EqualError(t, testCase.err, err.Error())
+				require.Error(t, err)
+				require.ErrorContains(t, err, testCase.err.Error())
 			} else {
 				require.NoError(t, err)
 			}

@@ -88,9 +88,15 @@ func (t *Task) ValidateInput(input *Input) (err error) {
 		if missing := m &^ t.Input.Modality; missing != 0 {
 			return validation.Incorrect("input.modality", fmt.Sprintf("input modality %s is not supported by the task", missing.String()))
 		}
+
+		// Validate the context against the input schema if it exists.
+		if t.Input.Schema != nil {
+			if err = t.Input.Schema.Validate(input.Context); err != nil {
+				return errors.Join(errors.ErrInvalidInput, err)
+			}
+		}
 	}
 
-	// TODO: Validate input context against the schema.
 	return nil
 }
 

@@ -114,3 +114,50 @@ func TestSchemaClone(t *testing.T) {
 		require.Nil(t, absent.Clone())
 	})
 }
+
+func TestSchemaValidate(t *testing.T) {
+	tests := []struct {
+		name    string
+		data    string
+		context map[string]any
+		err     error
+	}{
+		{
+			name:    "valid schema",
+			data:    `{"type":"object","properties":{"name":{"type":"string"}}}`,
+			context: map[string]any{"name": "John"},
+		},
+		{
+			name: "bad schema",
+			data: `{"type":}`,
+			err:  errors.ErrInvalidJSONSchema,
+		},
+		{
+			name:    "invalid type",
+			data:    `{"type":"object","properties":{"name":{"type":"number"}}}`,
+			context: map[string]any{"name": "John"},
+			err:     errors.ErrSchemaValidation,
+		},
+		{
+			name:    "missing required property",
+			data:    `{"type":"object","properties":{"name":{"type":"string"}}, "required":["name"]}`,
+			context: map[string]any{},
+			err:     errors.ErrSchemaValidation,
+		},
+	}
+
+	for _, tt := range tests {
+		t.Run(tt.name, func(t *testing.T) {
+			schema := &schema.Schema{
+				MimeType: mime.ApplicationSchemaJSON,
+				Data:     tt.data,
+			}
+			err := schema.Validate(tt.context)
+			if tt.err != nil {
+				require.ErrorIs(t, err, tt.err)
+			} else {
+				require.NoError(t, err)
+			}
+		})
+	}
+}
